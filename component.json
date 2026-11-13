@@ -10,9 +10,9 @@
     "Public views (the pub schema): read-only, for Conn"
   ],
   "repository": "logbook",
-  "image": "postgres:17-alpine (upstream PostgreSQL; Logbook is the schema and ledger on top)",
+  "image": "postgres:17 (upstream PostgreSQL; Logbook is the schema and ledger on top)",
   "dependsOn": [],
   "memory": "256 MiB",
-  "version": "17-alpine",
+  "version": "17",
   "subTools": []
 }

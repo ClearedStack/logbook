@@ -83,6 +83,7 @@ Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the i
 | `13_migrate` | `migrate.sh` applies each migration once and refuses each thing it should |
 | `14_dump_and_restore` | A dump restored into a new database passes the integrity checks and keeps both roles fenced |
 | `15_cluster_lists_every_migration` | Every migration is named in `kustomization.yaml`, so the cluster is handed each one |
+| `16_item_id_width` | An item identifier of 4 to 9 digits is accepted, and a shorter, longer or lower-case one is refused |
 
 After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new output, and read the difference before committing it.
 
@@ -107,7 +108,7 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 | **Role** | Control-plane service |
 | **Formerly** | `postgres` |
 | **Namespace** | `clearedstack` |
-| **Container image** | `postgres:17-alpine (upstream PostgreSQL; Logbook is the schema and ledger on top)` |
+| **Container image** | `postgres:17 (upstream PostgreSQL; Logbook is the schema and ledger on top)` |
 | **Memory budget** | 256 MiB |
 | **Depends on** | Nothing else in the platform |
 | **Depended on by** | [Conn](https://github.com/ClearedStack/clearedstack.com), [Muster](https://github.com/ClearedStack/muster) |
@@ -125,7 +126,7 @@ These are in `SPEC.md` and are not built here.
 | --- | --- |
 | Nightly backup: a consistent dump, encrypted with `age`, sent off the node, old copies pruned | Not built. The saved example `14_dump_and_restore` covers only taking a dump and loading it |
 | Monthly restore drill | Not built. The integrity checks it would run on the database are built, and so is the table and view its result goes in |
-| Deployment: the priority class | Not set. [`deploy/`](deploy) has the rest: the persistent volume, the `ClusterIP` service, running as non-root with every capability dropped. It runs the official `postgres:17` image, pinned by digest, where the naming registry says `17-alpine`. The ownership map still puts the manifest in `clearedstack.com`, at `deploy/logbook/app.yaml` |
+| Deployment: the priority class | Not set. [`deploy/`](deploy) has the rest: the persistent volume, the `ClusterIP` service, running as non-root with every capability dropped. It runs the official `postgres:17` image, pinned by digest. The ownership map still puts the manifest in `clearedstack.com`, at `deploy/logbook/app.yaml` |
 | Network isolation: Muster and Conn | [`deploy/networkpolicy.yaml`](deploy/networkpolicy.yaml) denies everything in the namespace and lets only the migrate Job reach the database. Muster and Conn are not deployed, so no rule lets them in yet |
 | Login for `pub_ro` | Not turned on. The migrate Job turns login on for `muster` only |
 | Settings that keep the running database within 256 MiB | Not built. The tests run within 256 MiB, which is not the same thing as a database under load |
@@ -135,7 +136,7 @@ These are in `SPEC.md` and are not built here.
 Three things to know before relying on it:
 
 - **Restoring a dump does not restore who may connect.** A dump of one database does not carry the database’s own privileges. After a restore, anyone with a login on the server can connect until this is applied again: `REVOKE ALL ON DATABASE ... FROM PUBLIC` and `GRANT CONNECT ON DATABASE ... TO muster, pub_ro`. The saved example `14_dump_and_restore` shows it.
-- **Identifiers can have gaps.** A refused insert still uses up its number, and numbers stop at `PA-9999`.
+- **Identifiers can have gaps.** A refused insert still uses up its number. The numbers Logbook gives out itself stop at `PA-9999`. An identifier may have up to 9 digits, and one past `PA-9999` has to be supplied by whoever inserts the row.
 - **Logbook does not decide which move between states is allowed.** It checks that both ends of a move are states it knows. Muster is the gatekeeper.
 
 ## Names

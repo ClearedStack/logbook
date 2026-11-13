@@ -6,7 +6,7 @@ restore exit status 0
 15 checks, 0 failures
 
 == It holds the same rows as the original.
-items 5, evaluations 4, decisions 2, proposals 3, queued 5, pauses 2, ledger entries 33, drills 3, migrations 7
+items 5, evaluations 4, decisions 2, proposals 3, queued 5, pauses 2, ledger entries 33, drills 3, migrations 8
 
 == The next item continues the numbering.
 PA-0006

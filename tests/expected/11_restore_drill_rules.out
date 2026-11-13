@@ -1,0 +1,46 @@
+-- Rules for a restore drill: it records when it ran and what each of its four
+-- checks found, and it passed only if all four ran and passed.
+-- Every combination of the four outcomes, where empty means the check did not run.
+INSERT INTO core.restore_drill (ran_at, decrypt_passed, logbook_passed, plainforge_passed, lazarette_passed)
+SELECT '2026-01-31 03:00+00', a, b, c, d
+FROM unnest(ARRAY[true, false, NULL]) WITH ORDINALITY AS w (a, wn),
+     unnest(ARRAY[true, false, NULL]) WITH ORDINALITY AS x (b, xn),
+     unnest(ARRAY[true, false, NULL]) WITH ORDINALITY AS y (c, yn),
+     unnest(ARRAY[true, false, NULL]) WITH ORDINALITY AS z (d, zn)
+ORDER BY wn, xn, yn, zn;
+SELECT count(*) AS drills, count(*) FILTER (WHERE passed) AS passed FROM core.restore_drill;
+ drills | passed 
+--------+--------
+     81 |      1
+(1 row)
+
+SELECT decrypt_passed, logbook_passed, plainforge_passed, lazarette_passed, passed
+FROM core.restore_drill WHERE passed;
+ decrypt_passed | logbook_passed | plainforge_passed | lazarette_passed | passed 
+----------------+----------------+-------------------+------------------+--------
+ t              | t              | t                 | t                | t
+(1 row)
+
+SELECT count(*) AS drills_with_an_empty_overall_result FROM core.restore_drill WHERE passed IS NULL;
+ drills_with_an_empty_overall_result 
+-------------------------------------
+                                   0
+(1 row)
+
+-- The overall result follows from the four checks; it cannot be set by hand.
+INSERT INTO core.restore_drill (ran_at, decrypt_passed, passed) VALUES ('2026-02-28 03:00+00', false, true);
+ERROR:  cannot insert a non-DEFAULT value into column "passed"
+-- A drill says when it ran: E_PARSE.
+INSERT INTO core.restore_drill (ran_at, decrypt_passed) VALUES (NULL, true);
+ERROR:  E_PARSE: ran_at is missing
+-- What the public sees of the latest drill.
+INSERT INTO core.restore_drill (ran_at, decrypt_passed, logbook_passed, plainforge_passed, lazarette_passed)
+VALUES ('2026-02-28 03:00+00', true, true, false, true);
+SET SESSION AUTHORIZATION pub_ro;
+SELECT ran_at, passed, decrypt_passed, logbook_passed, plainforge_passed, lazarette_passed
+FROM pub.restore_drill ORDER BY ran_at DESC, drill_id DESC LIMIT 1;
+         ran_at         | passed | decrypt_passed | logbook_passed | plainforge_passed | lazarette_passed 
+------------------------+--------+----------------+----------------+-------------------+------------------
+ 2026-02-28 03:00:00+00 | f      | t              | t              | f                 | t
+(1 row)
+

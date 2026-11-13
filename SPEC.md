@@ -55,6 +55,105 @@ Because Logbook holds one of the cluster's three non-recreatable Persistent Volu
 - **Encrypted Off-Node Backups:** Backup archives are encrypted with `age` before leaving the host node, with the decryption key stored separately from the off-node backup target.
 - **Unprivileged Execution:** Runs as non-root with dropped capabilities and no privilege escalation.
 
+## Schema
+
+> **Proposed with the first build milestone, and waiting for review.** The sections above do not say what the tables, views and rules are. This section says what was built, and where each choice came from. The code is in [`migrations/`](migrations) and every rule here has a saved example in [`tests/`](tests). Nothing above this line was changed.
+
+### Roles
+
+| Role | For | May do |
+| --- | --- | --- |
+| `muster` | Muster | Read every `core` table. Write each one only as its job needs: see the table below. Nothing in `pub`. |
+| `pub_ro` | Conn | Read every `pub` view. Nothing else. |
+
+Both roles are created without a password and unable to log in. Whoever deploys Logbook turns login on and sets the password, so no credential is ever in this repository. Nobody else is granted anything, on the database, a schema, a table or a function.
+
+`muster` is the name the naming registry gives the service. The specification named only `pub_ro`.
+
+### Working tables (`core`)
+
+| Table | Holds | Muster may |
+| --- | --- | --- |
+| `core.item` | One row for each item: `PA-0001` identifier, state, title, the cleaned address it was found at and the SHA-256 of that address | Add. Change the state, title and address. Never remove, never change the identifier |
+| `core.evaluation` | One row each time an item is screened and scored: the result of each gate, the rating and weight of each factor, the score, the recommendation | Add only |
+| `core.decision` | The decision trail: what the owner chose for an evaluation, and why | Add only |
+| `core.edit_proposal` | One row for each proposal that passed the automatic checks: the element, the owning repository, the kind, the text, the status | Add. Change the status. Never change the text, never remove |
+| `core.queue` | Work waiting or claimed: the worker, the lane, what it is about, and the lease | Add, remove. Change the lease and the attempt count |
+| `core.pause` | Items stopped for a missing rule: the worker, the pattern, the state to return to | Add. Mark as replayed |
+| `core.ledger` | The append-only ledger: one entry each time an item changes state or a proposal changes status | Add only |
+| `core.restore_drill` | When each restore drill ran, and the outcome of its four checks | Add only |
+| `core.migration` | Which migrations have been applied, and the SHA-256 of each file | Read only |
+
+The ledger refuses a change, a removal or a truncation from anyone, including the owner of the database.
+
+### Public views (`pub`)
+
+| View | Shows |
+| --- | --- |
+| `pub.item` | Identifier, state, title, when it was recorded and when it last changed |
+| `pub.item_history` | Every change of state of every item, from the ledger |
+| `pub.evaluation`, `pub.evaluation_gate`, `pub.evaluation_factor` | Each evaluation, the result of each gate, and the points for each factor |
+| `pub.decision` | What was recommended, what the owner chose, whether that was an override, and the reason |
+| `pub.queue_depth` | How much work is waiting and claimed, for each worker and lane |
+| `pub.pause` | Every pause for a missing rule, and whether it has been replayed |
+| `pub.edit_proposal` | Every proposal and its status. The text appears only once the owner has approved it |
+| `pub.restore_drill` | When each drill ran, whether it passed, and the outcome of each of the four checks |
+
+Never shown in any view: an item's address or its hash, a lease token, and the text of a proposal that is waiting or was declined.
+
+### Fixed lists
+
+Logbook refuses a value outside these lists.
+
+| List | Values | Taken from |
+| --- | --- | --- |
+| Item states | `discovered`, `recorded`, `observed`, `needs_subtool`, `screened_out`, `scored`, `parked`, `approved`, `building`, `live`, `rejected`, `linked`, `merged`, `retired` | [An item’s life](https://clearedstack.com/platform/item-lifecycle/) |
+| Lanes, in the order they are emptied | `urgent`, `normal`, `backfill` | [An item’s life](https://clearedstack.com/platform/item-lifecycle/) |
+| Error codes | `E_TIMEOUT`, `E_PARSE`, `E_NEEDS_SUBTOOL` | [Operating it](https://clearedstack.com/platform/operations/) |
+| Recommendations | `build`, `link`, `park`, `reject` | [How we decide what to build](https://clearedstack.com/platform/how-we-decide/) |
+| Decisions | `build`, `link`, `merge`, `park`, `reject`, `reopen` | [How we decide what to build](https://clearedstack.com/platform/how-we-decide/) |
+| Kinds of edit | `DATA`, `CONFIG`, `ISSUE` | [Public edits](https://clearedstack.com/platform/public-edits/) |
+| Proposal statuses | `pending_approval`, `approved`, `building`, `live`, `declined` | [Public edits](https://clearedstack.com/platform/public-edits/) |
+| Restore drill checks | `decrypt`, `logbook`, `plainforge`, `lazarette` | [Operating it](https://clearedstack.com/platform/operations/) |
+
+Names that are listed somewhere else are checked for their form only: a worker or repository in the naming registry, an element in the ownership map, and the gates, factors and profiles that belong to Assay. Logbook does not keep a second copy of those lists. In particular it does not fix the weights of the rubric: an evaluation records the weight that was used, and Logbook checks that the score is the sum of each rating times its weight.
+
+### What Logbook refuses
+
+| Rule | Refusal |
+| --- | --- |
+| A required value is missing, or is not in the form it must have | `E_PARSE` |
+| A value is well-formed and not in a fixed list | `E_NEEDS_SUBTOOL` |
+| An item identifier is not `PA-` and four digits | `E_PARSE` |
+| An evaluation’s score is not the sum of each rating times its weight, a rating is not a whole number from 1 to 5, or a failed gate has no reason | `E_PARSE` |
+| An evaluation that failed a gate also carries factors, a score or a recommendation | `E_PARSE` |
+| A decision differs from the recommendation and has no written reason | `E_PARSE` |
+| A proposal’s text is longer than 4096 bytes, is empty or holds control characters | `E_PARSE` |
+| A lease has a token and no end time, or the other way round | `E_PARSE` |
+| A ledger entry is not about exactly one item or one proposal | `E_PARSE` |
+
+A refusal names the field and the rule. It never repeats the value it refused. Logbook never raises `E_TIMEOUT` itself; it stores that code when a worker reports it, and `migrate.sh` reports it when the database does not answer.
+
+Logbook does not decide which move between states is allowed. Muster is the gatekeeper for that. Logbook checks that both ends of a move are states it knows.
+
+### Integrity checks
+
+`core.integrity_check()` returns the same fifteen checks in the same order every time, each with the number of things that failed it. A restore drill runs it on the restored copy, and all zeros is a pass. It checks that every row would still be accepted, that each item and each proposal is where its last ledger entry put it, that each ledger trail has no gap, that an item is in `needs_subtool` exactly when it has an open pause, and that the public views show every row and no unapproved text.
+
+### Questions this leaves open
+
+| Question | What was built in the meantime |
+| --- | --- |
+| The platform pages write one state two ways, `screened_out` and `screened-out` | `screened_out`. The hyphenated form is refused |
+| `PA-XXXX` allows 9,999 items | Logbook stops at `PA-9999` and refuses the next item |
+| An item is said to have an identifier in every state, and also to be given one only when it moves from `discovered` to `recorded` | Every row has an identifier, and every one of the fourteen states is accepted |
+| Only Muster and Conn may connect, but a backup needs a dump and a drill needs its result written | No third role. A drill’s result is written by Muster. A dump has to be taken by the owner of the database from inside Logbook’s own pod |
+| The memory figure is called a request here and a limit in the build prompt | The tests run within a limit of 256 MiB |
+| What Sextant observes about an item is said to be stored in `core`, and its shape is not given | Not stored yet |
+| The health of each component is said to reach `pub`, and this specification does not list it among what Logbook stores | Not stored yet |
+| How long a lease lasts, and how a worker claims one | The table holds a lease. There is no function that claims one |
+| Whether an item’s address is public | Not published |
+
 ## Related pages
 
 - [Cluster architecture](https://clearedstack.com/platform/cluster-architecture/)

@@ -1,0 +1,199 @@
+-- Rule: the public views are the whole public surface. This is every column
+-- they have and every row they show for the sample record. A new column, or a
+-- private value showing up, changes this output and fails the test.
+SELECT table_name AS view, string_agg(column_name, ', ' ORDER BY ordinal_position) AS columns
+FROM information_schema.columns
+WHERE table_schema = 'pub'
+GROUP BY 1
+ORDER BY 1;
+       view        |                                            columns                                             
+-------------------+------------------------------------------------------------------------------------------------
+ decision          | decision_id, item_id, evaluation_id, recommendation, outcome, overridden, reason, decided_at
+ edit_proposal     | proposal_id, element_id, owner_repo, edit_class, status, payload, submitted_at, decided_at
+ evaluation        | evaluation_id, item_id, profile, gates_passed, score, recommendation, split_flag, evaluated_at
+ evaluation_factor | evaluation_id, item_id, factor, rating, weight, points
+ evaluation_gate   | evaluation_id, item_id, gate, passed, reason
+ item              | item_id, state, title, recorded_at, changed_at
+ item_history      | entry_id, item_id, actor, from_state, to_state, error_code, note, recorded_at
+ pause             | pause_id, item_id, worker, pattern, paused_at, replayed_at
+ queue_depth       | worker, lane, waiting, claimed
+ restore_drill     | drill_id, ran_at, passed, decrypt_passed, logbook_passed, plainforge_passed, lazarette_passed
+(10 rows)
+
+SET SESSION AUTHORIZATION pub_ro;
+SELECT * FROM pub.item ORDER BY item_id;
+ item_id |     state     |           title           |      recorded_at       |       changed_at       
+---------+---------------+---------------------------+------------------------+------------------------
+ PA-0001 | live          | Sample page-count planner | 2026-01-05 09:00:00+00 | 2026-01-05 16:00:00+00
+ PA-0002 | screened_out  | Sample all-in-one suite   | 2026-01-06 09:00:00+00 | 2026-01-06 12:00:00+00
+ PA-0003 | needs_subtool | Sample form reader        | 2026-01-07 09:00:00+00 | 2026-01-07 10:00:00+00
+ PA-0004 | scored        | Sample threshold lookup   | 2026-01-08 09:00:00+00 | 2026-01-08 12:00:00+00
+ PA-0005 | parked        | Sample table checker      | 2026-01-09 09:00:00+00 | 2026-01-09 14:00:00+00
+(5 rows)
+
+SELECT * FROM pub.item_history ORDER BY entry_id;
+ entry_id | item_id |   actor   |  from_state   |   to_state    |   error_code    |                       note                       |      recorded_at       
+----------+---------+-----------+---------------+---------------+-----------------+--------------------------------------------------+------------------------
+        1 | PA-0001 | trawl     |               | discovered    |                 |                                                  | 2026-01-05 09:00:00+00
+        2 | PA-0001 | trawl     | discovered    | recorded      |                 |                                                  | 2026-01-05 09:01:00+00
+        3 | PA-0001 | sextant   | recorded      | observed      |                 |                                                  | 2026-01-05 10:00:00+00
+        4 | PA-0001 | assay     | observed      | needs_subtool | E_NEEDS_SUBTOOL | No profile for this kind of tool.                | 2026-01-05 11:00:00+00
+        5 | PA-0001 | muster    | needs_subtool | observed      |                 | Run again after the rule shipped.                | 2026-01-05 12:00:00+00
+        6 | PA-0001 | assay     | observed      | scored        |                 |                                                  | 2026-01-05 13:00:00+00
+        7 | PA-0001 | owner     | scored        | approved      |                 |                                                  | 2026-01-05 14:00:00+00
+        8 | PA-0001 | moldloft  | approved      | building      |                 |                                                  | 2026-01-05 15:00:00+00
+        9 | PA-0001 | chartroom | building      | live          |                 |                                                  | 2026-01-05 16:00:00+00
+       10 | PA-0002 | trawl     |               | discovered    |                 |                                                  | 2026-01-06 09:00:00+00
+       11 | PA-0002 | trawl     | discovered    | recorded      |                 |                                                  | 2026-01-06 09:01:00+00
+       12 | PA-0002 | sextant   | recorded      | observed      |                 |                                                  | 2026-01-06 10:00:00+00
+       13 | PA-0002 | assay     | observed      | screened_out  |                 | Failed the one-job gate.                         | 2026-01-06 12:00:00+00
+       14 | PA-0003 | trawl     |               | discovered    |                 |                                                  | 2026-01-07 09:00:00+00
+       15 | PA-0003 | trawl     | discovered    | recorded      |                 |                                                  | 2026-01-07 09:01:00+00
+       16 | PA-0003 | sextant   | recorded      | needs_subtool | E_NEEDS_SUBTOOL | No rule for this page layout.                    | 2026-01-07 10:00:00+00
+       17 | PA-0004 | trawl     |               | discovered    |                 |                                                  | 2026-01-08 09:00:00+00
+       18 | PA-0004 | trawl     | discovered    | recorded      |                 |                                                  | 2026-01-08 09:01:00+00
+       19 | PA-0004 | sextant   | recorded      | recorded      | E_TIMEOUT       | The public page took too long. Still queued.     | 2026-01-08 10:00:00+00
+       20 | PA-0004 | sextant   | recorded      | observed      |                 |                                                  | 2026-01-08 11:00:00+00
+       21 | PA-0004 | assay     | observed      | scored        |                 |                                                  | 2026-01-08 12:00:00+00
+       22 | PA-0005 | trawl     |               | discovered    |                 |                                                  | 2026-01-09 09:00:00+00
+       23 | PA-0005 | trawl     | discovered    | recorded      |                 |                                                  | 2026-01-09 09:01:00+00
+       24 | PA-0005 | sextant   | recorded      | observed      |                 |                                                  | 2026-01-09 10:00:00+00
+       25 | PA-0005 | assay     | observed      | scored        |                 |                                                  | 2026-01-09 12:00:00+00
+       26 | PA-0005 | owner     | scored        | parked        |                 | Held until the sample rule it rests on is final. | 2026-01-09 14:00:00+00
+(26 rows)
+
+SELECT * FROM pub.evaluation ORDER BY evaluation_id;
+ evaluation_id | item_id |    profile     | gates_passed | score | recommendation | split_flag |      evaluated_at      
+---------------+---------+----------------+--------------+-------+----------------+------------+------------------------
+             1 | PA-0001 | sample-profile | t            |    89 | build          | f          | 2026-01-05 13:00:00+00
+             2 | PA-0002 | sample-profile | f            |       |                | f          | 2026-01-06 12:00:00+00
+             3 | PA-0004 | sample-profile | t            |    67 | park           | f          | 2026-01-08 12:00:00+00
+             4 | PA-0005 | sample-profile | t            |    84 | build          | f          | 2026-01-09 12:00:00+00
+(4 rows)
+
+SELECT * FROM pub.evaluation_gate ORDER BY evaluation_id, gate;
+ evaluation_id | item_id |         gate          | passed |             reason             
+---------------+---------+-----------------------+--------+--------------------------------
+             1 | PA-0001 | arithmetic_not_advice | t      | 
+             1 | PA-0001 | one_job               | t      | 
+             1 | PA-0001 | private_by_design     | t      | 
+             1 | PA-0001 | public_source         | t      | 
+             1 | PA-0001 | runs_in_browser       | t      | 
+             2 | PA-0002 | arithmetic_not_advice | t      | 
+             2 | PA-0002 | one_job               | f      | It does several jobs, not one.
+             2 | PA-0002 | private_by_design     | t      | 
+             2 | PA-0002 | public_source         | t      | 
+             2 | PA-0002 | runs_in_browser       | t      | 
+             3 | PA-0004 | arithmetic_not_advice | t      | 
+             3 | PA-0004 | one_job               | t      | 
+             3 | PA-0004 | private_by_design     | t      | 
+             3 | PA-0004 | public_source         | t      | 
+             3 | PA-0004 | runs_in_browser       | t      | 
+             4 | PA-0005 | arithmetic_not_advice | t      | 
+             4 | PA-0005 | one_job               | t      | 
+             4 | PA-0005 | private_by_design     | t      | 
+             4 | PA-0005 | public_source         | t      | 
+             4 | PA-0005 | runs_in_browser       | t      | 
+(20 rows)
+
+SELECT * FROM pub.evaluation_factor ORDER BY evaluation_id, factor;
+ evaluation_id | item_id |   factor    | rating | weight | points 
+---------------+---------+-------------+--------+--------+--------
+             1 | PA-0001 | browser_fit |      4 |      3 |     12
+             1 | PA-0001 | checkable   |      5 |      2 |     10
+             1 | PA-0001 | gap         |      4 |      4 |     16
+             1 | PA-0001 | need        |      5 |      4 |     20
+             1 | PA-0001 | size        |      4 |      2 |      8
+             1 | PA-0001 | source      |      5 |      3 |     15
+             1 | PA-0001 | upkeep      |      4 |      2 |      8
+             3 | PA-0004 | browser_fit |      3 |      3 |      9
+             3 | PA-0004 | checkable   |      3 |      2 |      6
+             3 | PA-0004 | gap         |      3 |      4 |     12
+             3 | PA-0004 | need        |      4 |      4 |     16
+             3 | PA-0004 | size        |      3 |      2 |      6
+             3 | PA-0004 | source      |      4 |      3 |     12
+             3 | PA-0004 | upkeep      |      3 |      2 |      6
+             4 | PA-0005 | browser_fit |      4 |      3 |     12
+             4 | PA-0005 | checkable   |      4 |      2 |      8
+             4 | PA-0005 | gap         |      5 |      4 |     20
+             4 | PA-0005 | need        |      5 |      4 |     20
+             4 | PA-0005 | size        |      3 |      2 |      6
+             4 | PA-0005 | source      |      4 |      3 |     12
+             4 | PA-0005 | upkeep      |      3 |      2 |      6
+(21 rows)
+
+SELECT * FROM pub.decision ORDER BY decision_id;
+ decision_id | item_id | evaluation_id | recommendation | outcome | overridden |                      reason                      |       decided_at       
+-------------+---------+---------------+----------------+---------+------------+--------------------------------------------------+------------------------
+           1 | PA-0001 |             1 | build          | build   | f          |                                                  | 2026-01-05 14:00:00+00
+           2 | PA-0005 |             4 | build          | park    | t          | Held until the sample rule it rests on is final. | 2026-01-09 14:00:00+00
+(2 rows)
+
+SELECT * FROM pub.pause ORDER BY pause_id;
+ pause_id | item_id | worker  |                  pattern                   |       paused_at        |      replayed_at       
+----------+---------+---------+--------------------------------------------+------------------------+------------------------
+        1 | PA-0001 | assay   | assay.e-needs-subtool.no-sample-profile    | 2026-01-05 11:00:00+00 | 2026-01-05 12:00:00+00
+        2 | PA-0003 | sextant | sextant.e-needs-subtool.sample-form-layout | 2026-01-07 10:00:00+00 | 
+(2 rows)
+
+-- The text of a proposal is shown only once the owner has approved it:
+-- proposal 1 is waiting and proposal 3 was declined.
+SELECT * FROM pub.edit_proposal ORDER BY proposal_id;
+ proposal_id |      element_id      |    owner_repo    | edit_class |      status      |              payload              |      submitted_at      |       decided_at       
+-------------+----------------------+------------------+------------+------------------+-----------------------------------+------------------------+------------------------
+           1 | pipeline.sextant     | sextant          | ISSUE      | pending_approval |                                   | 2026-01-10 08:00:00+00 | 
+           2 | command.hero.mission | clearedstack.com | DATA       | live             | Make the sample sentence shorter. | 2026-01-10 09:00:00+00 | 2026-01-10 10:00:00+00
+           3 | worker.assay.role    | assay            | CONFIG     | declined         |                                   | 2026-01-10 11:00:00+00 | 2026-01-10 12:00:00+00
+(3 rows)
+
+SELECT * FROM pub.restore_drill ORDER BY drill_id;
+ drill_id |         ran_at         | passed | decrypt_passed | logbook_passed | plainforge_passed | lazarette_passed 
+----------+------------------------+--------+----------------+----------------+-------------------+------------------
+        1 | 2026-01-31 03:00:00+00 | t      | t              | t              | t                 | t
+        2 | 2026-02-28 03:00:00+00 | f      | t              | f              | t                 | t
+        3 | 2026-03-31 03:00:00+00 | f      | f              |                |                   | 
+(3 rows)
+
+-- Work whose lease has run out counts as waiting again.
+SELECT * FROM pub.queue_depth ORDER BY worker, lane;
+   worker    |   lane   | waiting | claimed 
+-------------+----------+---------+---------
+ countersign | normal   |       1 |       0
+ tidegauge   | backfill |       1 |       0
+ tidegauge   | normal   |       1 |       1
+ tidegauge   | urgent   |       1 |       0
+(4 rows)
+
+RESET SESSION AUTHORIZATION;
+-- None of the private values of the sample record appears in any public view:
+-- not an address, not its hash, not a lease token, not an unapproved proposal.
+CREATE TEMPORARY TABLE published AS
+SELECT to_jsonb(v)::text AS line FROM pub.item v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.item_history v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.evaluation v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.evaluation_gate v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.evaluation_factor v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.decision v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.queue_depth v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.pause v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.edit_proposal v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.restore_drill v;
+SELECT count(*) AS lines_published FROM published;
+ lines_published 
+-----------------
+              90
+(1 row)
+
+SELECT count(*) AS private_values_published
+FROM published p
+JOIN (
+    SELECT address AS private_value FROM core.item WHERE address IS NOT NULL
+    UNION ALL SELECT address_sha256 FROM core.item WHERE address_sha256 IS NOT NULL
+    UNION ALL SELECT lease_token::text FROM core.queue WHERE lease_token IS NOT NULL
+    UNION ALL SELECT payload FROM core.edit_proposal WHERE status IN ('pending_approval', 'declined')
+) private ON position(private.private_value IN p.line) > 0;
+ private_values_published 
+--------------------------
+                        0
+(1 row)
+

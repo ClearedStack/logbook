@@ -1,0 +1,104 @@
+-- Rules for the ledger: entries are added and never changed or removed, not
+-- even by the owner of the database. An entry is about one item or one
+-- proposal, and records a move between states that Logbook knows.
+-- An entry cannot be changed, removed or swept away.
+UPDATE core.ledger SET note = 'Rewritten.' WHERE entry_id = 13;
+ERROR:  the ledger is append-only: an entry is never changed or removed
+UPDATE core.ledger SET to_state = 'scored' WHERE entry_id = 13;
+ERROR:  the ledger is append-only: an entry is never changed or removed
+DELETE FROM core.ledger WHERE entry_id = 13;
+ERROR:  the ledger is append-only: an entry is never changed or removed
+DELETE FROM core.ledger;
+ERROR:  the ledger is append-only: an entry is never changed or removed
+TRUNCATE core.ledger;
+ERROR:  the ledger is append-only: an entry is never changed or removed
+TRUNCATE core.item CASCADE;
+NOTICE:  truncate cascades to table "evaluation"
+NOTICE:  truncate cascades to table "queue"
+NOTICE:  truncate cascades to table "pause"
+NOTICE:  truncate cascades to table "ledger"
+NOTICE:  truncate cascades to table "decision"
+ERROR:  the ledger is append-only: an entry is never changed or removed
+TRUNCATE core.edit_proposal CASCADE;
+NOTICE:  truncate cascades to table "queue"
+NOTICE:  truncate cascades to table "ledger"
+ERROR:  the ledger is append-only: an entry is never changed or removed
+-- An item or a proposal with a history cannot be removed from under it.
+DELETE FROM core.item WHERE item_id = 'PA-0002';
+ERROR:  update or delete on table "item" violates foreign key constraint "evaluation_item_id_fkey" on table "evaluation"
+DELETE FROM core.edit_proposal WHERE proposal_id = 3;
+ERROR:  update or delete on table "edit_proposal" violates foreign key constraint "ledger_proposal_id_fkey" on table "ledger"
+-- Every entry is still there, unchanged.
+SELECT count(*) AS entries, min(entry_id) AS first, max(entry_id) AS last FROM core.ledger;
+ entries | first | last 
+---------+-------+------
+      33 |     1 |   33
+(1 row)
+
+SELECT entry_id, item_id, from_state, to_state, note FROM core.ledger WHERE entry_id = 13;
+ entry_id | item_id | from_state |   to_state   |           note           
+----------+---------+------------+--------------+--------------------------
+       13 | PA-0002 | observed   | screened_out | Failed the one-job gate.
+(1 row)
+
+-- Adding is allowed. The three error codes, each accepted on an entry.
+INSERT INTO core.ledger (item_id, actor, from_state, to_state, error_code, note, recorded_at)
+SELECT 'PA-0005', 'tidegauge', 'parked', 'parked', code, 'Sample failure. Nothing changed.', '2026-01-13 09:00+00'
+FROM unnest(core.error_codes()) AS code
+RETURNING entry_id, from_state, to_state, error_code;
+ entry_id | from_state | to_state |   error_code    
+----------+------------+----------+-----------------
+       34 | parked     | parked   | E_TIMEOUT
+       35 | parked     | parked   | E_PARSE
+       36 | parked     | parked   | E_NEEDS_SUBTOOL
+(3 rows)
+
+-- An entry is about one item or one proposal: E_PARSE.
+INSERT INTO core.ledger (actor, to_state) VALUES ('muster', 'recorded');
+ERROR:  E_PARSE: a ledger entry is about one item or one proposal
+INSERT INTO core.ledger (item_id, proposal_id, actor, to_state) VALUES ('PA-0001', 1, 'muster', 'approved');
+ERROR:  E_PARSE: a ledger entry is about one item or one proposal
+-- An item moves between item states, and a proposal between proposal statuses.
+-- A status is not a state: unknown is E_NEEDS_SUBTOOL, missing or broken is E_PARSE.
+INSERT INTO core.ledger (item_id, actor, from_state, to_state) VALUES ('PA-0005', 'owner', 'parked', 'declined');
+ERROR:  E_NEEDS_SUBTOOL: to_state is a name Logbook has no rule for
+INSERT INTO core.ledger (item_id, actor, from_state, to_state) VALUES ('PA-0005', 'owner', 'pending_approval', 'observed');
+ERROR:  E_NEEDS_SUBTOOL: from_state is a name Logbook has no rule for
+INSERT INTO core.ledger (proposal_id, actor, from_state, to_state) VALUES (1, 'owner', 'pending_approval', 'scored');
+ERROR:  E_NEEDS_SUBTOOL: to_state is a name Logbook has no rule for
+INSERT INTO core.ledger (proposal_id, actor, from_state, to_state) VALUES (1, 'owner', 'recorded', 'approved');
+ERROR:  E_NEEDS_SUBTOOL: from_state is a name Logbook has no rule for
+INSERT INTO core.ledger (item_id, actor, from_state, to_state) VALUES ('PA-0005', 'owner', 'parked', NULL);
+ERROR:  E_PARSE: to_state is missing
+INSERT INTO core.ledger (item_id, actor, from_state, to_state) VALUES ('PA-0005', 'owner', 'parked', 'screened-out');
+ERROR:  E_PARSE: to_state is not a well-formed name
+INSERT INTO core.ledger (item_id, actor, from_state, to_state) VALUES ('PA-0005', 'owner', 'screened-out', 'observed');
+ERROR:  E_PARSE: from_state is not a well-formed name
+-- The error code is one of three: broken is E_PARSE, unknown is E_NEEDS_SUBTOOL.
+INSERT INTO core.ledger (item_id, actor, from_state, to_state, error_code) VALUES ('PA-0005', 'tidegauge', 'parked', 'parked', 'timeout!');
+ERROR:  E_PARSE: error_code is not a well-formed name
+INSERT INTO core.ledger (item_id, actor, from_state, to_state, error_code) VALUES ('PA-0005', 'tidegauge', 'parked', 'parked', 'E_UNKNOWN');
+ERROR:  E_NEEDS_SUBTOOL: error_code is a name Logbook has no rule for
+INSERT INTO core.ledger (item_id, actor, from_state, to_state, error_code) VALUES ('PA-0005', 'tidegauge', 'parked', 'parked', 'e_timeout');
+ERROR:  E_NEEDS_SUBTOOL: error_code is a name Logbook has no rule for
+-- The actor is a well-formed name, and a note is real text: E_PARSE.
+INSERT INTO core.ledger (item_id, actor, from_state, to_state) VALUES ('PA-0005', NULL, 'parked', 'observed');
+ERROR:  E_PARSE: actor is missing
+INSERT INTO core.ledger (item_id, actor, from_state, to_state) VALUES ('PA-0005', 'The Owner', 'parked', 'observed');
+ERROR:  E_PARSE: actor is not a well-formed name
+INSERT INTO core.ledger (item_id, actor, from_state, to_state, note) VALUES ('PA-0005', 'owner', 'parked', 'observed', '');
+ERROR:  E_PARSE: note is missing
+INSERT INTO core.ledger (item_id, actor, from_state, to_state, note) VALUES ('PA-0005', 'owner', 'parked', 'observed', repeat('x', 2001));
+ERROR:  E_PARSE: note is longer than 2000 bytes
+-- An entry is about an item or a proposal that exists.
+INSERT INTO core.ledger (item_id, actor, to_state) VALUES ('PA-0999', 'trawl', 'discovered');
+ERROR:  insert or update on table "ledger" violates foreign key constraint "ledger_item_id_fkey"
+INSERT INTO core.ledger (proposal_id, actor, to_state) VALUES (999, 'muster', 'pending_approval');
+ERROR:  insert or update on table "ledger" violates foreign key constraint "ledger_proposal_id_fkey"
+-- Only the three accepted entries were added.
+SELECT count(*) AS entries, max(entry_id) AS last FROM core.ledger;
+ entries | last 
+---------+------
+      36 |   36
+(1 row)
+

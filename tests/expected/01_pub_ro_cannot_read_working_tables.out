@@ -1,0 +1,166 @@
+-- Rule: Conn reads Logbook as pub_ro, and pub_ro can read the public views and
+-- nothing else. It cannot read a working table, write anywhere, or become
+-- another role.
+SET SESSION AUTHORIZATION pub_ro;
+SELECT current_user;
+ current_user 
+--------------
+ pub_ro
+(1 row)
+
+-- It can read a public view.
+SELECT count(*) AS items FROM pub.item;
+ items 
+-------
+     5
+(1 row)
+
+-- It cannot read any working table.
+SELECT count(*) FROM core.item;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.evaluation;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.decision;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.edit_proposal;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.queue;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.pause;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.ledger;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.restore_drill;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.migration;
+ERROR:  permission denied for schema core at character 22
+-- Not one column of one, either.
+SELECT lease_token FROM core.queue;
+ERROR:  permission denied for schema core at character 25
+SELECT payload FROM core.edit_proposal;
+ERROR:  permission denied for schema core at character 21
+SELECT address FROM core.item;
+ERROR:  permission denied for schema core at character 21
+-- It cannot call a function in core or take a number from the item sequence.
+SELECT core.item_states();
+ERROR:  permission denied for schema core at character 8
+SELECT * FROM core.integrity_check();
+ERROR:  permission denied for schema core at character 15
+SELECT nextval('core.item_number');
+ERROR:  permission denied for schema core at character 16
+-- It cannot write through a public view.
+INSERT INTO pub.item (item_id, state, title) VALUES ('PA-9000', 'live', 'Not allowed');
+ERROR:  permission denied for view item
+UPDATE pub.edit_proposal SET status = 'approved';
+ERROR:  permission denied for view edit_proposal
+DELETE FROM pub.item_history;
+ERROR:  permission denied for view item_history
+-- It cannot make anything of its own, or become Muster.
+CREATE TABLE pub.scratch (note text);
+ERROR:  permission denied for schema pub at character 14
+CREATE TEMPORARY TABLE scratch (note text);
+ERROR:  permission denied to create temporary tables in database "logbook_test_01_pub_ro_cannot_read_working_tables" at character 24
+CREATE SCHEMA scratch;
+ERROR:  permission denied for database logbook_test_01_pub_ro_cannot_read_working_tables
+SET ROLE muster;
+ERROR:  permission denied to set role "muster"
+RESET SESSION AUTHORIZATION;
+-- The same thing asked of the catalog, so that a table or function added
+-- later is covered without anyone remembering to add it here.
+-- Working tables of which pub_ro can read, write or reference even one column: none.
+SELECT c.relname
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'core' AND c.relkind IN ('r', 'p', 'v', 'm')
+  AND (has_any_column_privilege('pub_ro', c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')
+       OR has_table_privilege('pub_ro', c.oid, 'DELETE, TRUNCATE, TRIGGER'))
+ORDER BY 1;
+ relname 
+---------
+(0 rows)
+
+-- Functions in core that pub_ro can call: none.
+SELECT p.oid::regprocedure
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'core' AND has_function_privilege('pub_ro', p.oid, 'EXECUTE')
+ORDER BY 1;
+ oid 
+-----
+(0 rows)
+
+-- Sequences pub_ro can use: none.
+SELECT c.relname
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname IN ('core', 'pub', 'public')
+  AND CASE WHEN c.relkind = 'S' THEN has_sequence_privilege('pub_ro', c.oid, 'USAGE, SELECT, UPDATE') END
+ORDER BY 1;
+ relname 
+---------
+(0 rows)
+
+-- Public views pub_ro cannot read: none. Public views it can write: none.
+SELECT c.relname AS unreadable
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'pub' AND NOT has_table_privilege('pub_ro', c.oid, 'SELECT')
+ORDER BY 1;
+ unreadable 
+------------
+(0 rows)
+
+SELECT c.relname AS writable
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'pub'
+  AND (has_any_column_privilege('pub_ro', c.oid, 'INSERT, UPDATE, REFERENCES')
+       OR has_table_privilege('pub_ro', c.oid, 'DELETE, TRUNCATE, TRIGGER'))
+ORDER BY 1;
+ writable 
+----------
+(0 rows)
+
+-- Everything in pub is a view. There is no table there to hold a private row.
+SELECT c.relkind, count(*) FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'pub' GROUP BY 1 ORDER BY 1;
+ relkind | count 
+---------+-------
+ v       |    10
+(1 row)
+
+-- What pub_ro holds on the schemas and on the database.
+SELECT has_schema_privilege('pub_ro', 'pub', 'USAGE')     AS use_pub,
+       has_schema_privilege('pub_ro', 'pub', 'CREATE')    AS create_in_pub,
+       has_schema_privilege('pub_ro', 'core', 'USAGE')    AS use_core,
+       has_schema_privilege('pub_ro', 'core', 'CREATE')   AS create_in_core,
+       has_schema_privilege('pub_ro', 'public', 'USAGE')  AS use_public,
+       has_schema_privilege('pub_ro', 'public', 'CREATE') AS create_in_public;
+ use_pub | create_in_pub | use_core | create_in_core | use_public | create_in_public 
+---------+---------------+----------+----------------+------------+------------------
+ t       | f             | f        | f              | f          | f
+(1 row)
+
+SELECT has_database_privilege('pub_ro', current_database(), 'CONNECT')   AS connect,
+       has_database_privilege('pub_ro', current_database(), 'CREATE')    AS create_schema,
+       has_database_privilege('pub_ro', current_database(), 'TEMPORARY') AS temporary_tables;
+ connect | create_schema | temporary_tables 
+---------+---------------+------------------
+ t       | f             | f
+(1 row)
+
+-- The role itself: no powers, no memberships, and no way to log in until the
+-- deployment gives it a password.
+SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls,
+       rolpassword IS NULL AS no_password,
+       (SELECT count(*) FROM pg_auth_members m WHERE m.member = a.oid) AS member_of
+FROM pg_authid a
+WHERE rolname IN ('muster', 'pub_ro')
+ORDER BY 1;
+ rolname | rolcanlogin | rolsuper | rolcreatedb | rolcreaterole | rolinherit | rolreplication | rolbypassrls | no_password | member_of 
+---------+-------------+----------+-------------+---------------+------------+----------------+--------------+-------------+-----------
+ muster  | f           | f        | f           | f             | f          | f              | f            | t           |         0
+ pub_ro  | f           | f        | f           | f             | f          | f              | f            | t           |         0
+(2 rows)
+

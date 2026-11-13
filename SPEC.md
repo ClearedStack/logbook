@@ -6,7 +6,7 @@
 
 The same text is published at [clearedstack.com/platform/logbook/](https://clearedstack.com/platform/logbook/). To change the specification, change it here and say why.
 
-Logbook is the name for the platform’s record of state, not for the database engine. If PostgreSQL were ever replaced, Logbook would still be Logbook. Today it is a single shared PostgreSQL 17 database (image `postgres:17-alpine`, with its schema owned by `clearedstack.com`). Running one consolidated database on a Persistent Volume Claim (PVC) eliminates multi-database sync bugs and keeps control-plane memory compact enough for a single 4 GiB `k3s` node.
+Logbook is the name for the platform’s record of state, not for the database engine. If PostgreSQL were ever replaced, Logbook would still be Logbook. Today it is a single shared PostgreSQL 17 database (image `postgres:17-alpine`, with its schema kept in the `logbook` repository). Running one consolidated database on a Persistent Volume Claim (PVC) eliminates multi-database sync bugs and keeps control-plane memory compact enough for a single 4 GiB `k3s` node.
 
 ## Overview & Role
 
@@ -23,7 +23,7 @@ Logbook is the durable system of record for live operational state, work queues,
 | **Namespace** | `clearedstack` (Control Plane) |
 | **Kind** | `control-plane` |
 | **Version** | `17-alpine` |
-| **Owning Repo** | `clearedstack.com` |
+| **Owning Repo** | `logbook` |
 | **RAM Request** | `256 MiB` |
 | **Priority Class** | High (Control Plane — protected from eviction) |
 | **Storage** | Persistent Volume Claim (1 of 3 cluster PVCs) |

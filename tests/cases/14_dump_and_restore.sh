@@ -40,6 +40,17 @@ ask "SELECT 'items ' || (SELECT count(*) FROM core.item)
 printf '\n== The next item continues the numbering.\n'
 ask "INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item after the restore') RETURNING item_id"
 
+printf '\n== The default that gives out identifiers came back, with its sequence and its limit.\n'
+ask "SELECT 'default: ' || pg_get_expr(d.adbin, d.adrelid)
+     FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+     WHERE d.adrelid = 'core.item'::regclass AND a.attname = 'item_id'"
+ask "SELECT 'numbers run to: ' || seqmax FROM pg_sequence WHERE seqrelid = 'core.item_number'::regclass"
+ask "SELECT 'next number set after: ' || setval('core.item_number', 9999)"
+psql -X -q -A -t -v VERBOSITY=terse \
+    -c 'SET SESSION AUTHORIZATION muster' \
+    -c "INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item past the old limit') RETURNING item_id" \
+    -c "INSERT INTO core.item (item_id, state, title) VALUES ('PA-20000', 'discovered', 'Sample')" 2>&1
+
 printf '\n== The checks on writing came back with it.\n'
 psql -X -q -v VERBOSITY=terse -c "INSERT INTO core.item (state, title) VALUES ('archived', 'Sample')" 2>&1
 psql -X -q -v VERBOSITY=terse -c "DELETE FROM core.ledger WHERE entry_id = 1" 2>&1

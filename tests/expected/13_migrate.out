@@ -7,6 +7,8 @@ applied 0004_ledger
 applied 0005_public_views
 applied 0006_privileges
 applied 0007_integrity_checks
+applied 0008_widen_item_id
+applied 0009_item_numbering
 exit status 0
 
 == Run again: there is nothing to apply.
@@ -21,6 +23,8 @@ exit status 0
 0005_public_views  true
 0006_privileges  true
 0007_integrity_checks  true
+0008_widen_item_id  true
+0009_item_numbering  true
 
 == The recorded checksum of the first migration is the SHA-256 of its file.
 same
@@ -92,4 +96,6 @@ applied 0004_ledger
 applied 0005_public_views
 applied 0006_privileges
 applied 0007_integrity_checks
+applied 0008_widen_item_id
+applied 0009_item_numbering
 exit status 0

@@ -23,8 +23,8 @@ SELECT item_id, state FROM core.item WHERE item_id = 'PA-0004';
 SELECT count(*) AS queued_for_countersign FROM core.queue WHERE worker = 'countersign';
 
 -- A new item is given the next identifier.
-INSERT INTO core.item (state, title, recorded_at)
-VALUES ('discovered', 'Sample date counter', '2026-01-12 10:00+00')
+INSERT INTO core.item (state, title)
+VALUES ('discovered', 'Sample date counter')
 RETURNING item_id;
 
 -- It can replay a pause and move a proposal on.
@@ -90,7 +90,8 @@ WHERE n.nspname IN ('core', 'pub', 'public') AND c.relkind IN ('r', 'p', 'v', 'm
 GROUP BY 1
 ORDER BY 1;
 
--- Columns Muster may insert, read or reference without holding that on the whole table: none.
+-- Columns Muster may insert without holding INSERT on the whole table, and
+-- columns it may read or reference without holding that on the whole table.
 SELECT c.relname, a.attname
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace

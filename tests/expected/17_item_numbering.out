@@ -1,0 +1,122 @@
+-- Rule: Logbook gives out every item identifier. Numbers up to 9999 are
+-- written with four digits and larger ones with no leading zero, up to
+-- PA-999999999. Muster cannot supply an identifier.
+-- Muster adds three items across the old limit and is given each identifier.
+SELECT setval('core.item_number', 9998);
+ setval 
+--------
+   9998
+(1 row)
+
+SET SESSION AUTHORIZATION muster;
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item, the last with four digits') RETURNING item_id;
+ item_id 
+---------
+ PA-9999
+(1 row)
+
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item, the first with five digits') RETURNING item_id;
+ item_id  
+----------
+ PA-10000
+(1 row)
+
+INSERT INTO core.item (state, title, address) VALUES ('discovered', 'Sample item after that', 'https://tools.example/after')
+RETURNING item_id;
+ item_id  
+----------
+ PA-10001
+(1 row)
+
+-- Muster supplying an identifier is refused, whether or not it is well-formed.
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-20000', 'discovered', 'Sample');
+ERROR:  permission denied for table item
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-0001', 'discovered', 'Sample');
+ERROR:  permission denied for table item
+INSERT INTO core.item (item_id, state, title) VALUES (DEFAULT, 'discovered', 'Sample');
+ERROR:  permission denied for table item
+-- So is supplying the time it was recorded, or the hash of its address.
+INSERT INTO core.item (state, title, recorded_at) VALUES ('discovered', 'Sample', '2026-01-12 10:00+00');
+ERROR:  permission denied for table item
+INSERT INTO core.item (state, title, address_sha256) VALUES ('discovered', 'Sample', repeat('0', 64));
+ERROR:  cannot insert a non-DEFAULT value into column "address_sha256"
+-- It cannot move the numbering either.
+SELECT setval('core.item_number', 1);
+ERROR:  permission denied for sequence item_number
+RESET SESSION AUTHORIZATION;
+-- A number has one form. A second spelling of it is refused: E_PARSE.
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-00001', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-010000', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-000000001', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+-- The one spelling of each is accepted from the owner of the database.
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-0001', 'recorded', 'Sample item one') RETURNING item_id;
+ item_id 
+---------
+ PA-0001
+(1 row)
+
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-0000', 'recorded', 'Sample item zero') RETURNING item_id;
+ item_id 
+---------
+ PA-0000
+(1 row)
+
+-- What the numbering gives for the numbers around each change of width.
+SELECT n AS number, 'PA-' || lpad(n::text, greatest(4, length(n::text)), '0') AS identifier,
+       ('PA-' || lpad(n::text, greatest(4, length(n::text)), '0')) ~ '^PA-([0-9]{4}|[1-9][0-9]{4,8})$' AS accepted
+FROM unnest(ARRAY[1, 9, 10, 999, 1000, 9999, 10000, 99999, 100000, 999999999]) AS n;
+  number   |  identifier  | accepted 
+-----------+--------------+----------
+         1 | PA-0001      | t
+         9 | PA-0009      | t
+        10 | PA-0010      | t
+       999 | PA-0999      | t
+      1000 | PA-1000      | t
+      9999 | PA-9999      | t
+     10000 | PA-10000     | t
+     99999 | PA-99999     | t
+    100000 | PA-100000    | t
+ 999999999 | PA-999999999 | t
+(10 rows)
+
+-- The numbers run to PA-999999999 and stop there. Logbook refuses to go past
+-- it, and does not invent a longer identifier.
+SELECT setval('core.item_number', 999999998);
+  setval   
+-----------
+ 999999998
+(1 row)
+
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample last item') RETURNING item_id;
+   item_id    
+--------------
+ PA-999999999
+(1 row)
+
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item too many');
+ERROR:  nextval: reached maximum value of sequence "item_number" (999999999)
+-- Everything that was kept, and every kept row is well-formed.
+SELECT item_id, title FROM core.item ORDER BY length(item_id), item_id;
+   item_id    |                  title                  
+--------------+-----------------------------------------
+ PA-0000      | Sample item zero
+ PA-0001      | Sample item one
+ PA-9999      | Sample item, the last with four digits
+ PA-10000     | Sample item, the first with five digits
+ PA-10001     | Sample item after that
+ PA-999999999 | Sample last item
+(6 rows)
+
+SELECT core.malformed_rows('item') AS malformed_items;
+ malformed_items 
+-----------------
+               0
+(1 row)
+
+-- pub_ro cannot call the function that gives out identifiers.
+SET SESSION AUTHORIZATION pub_ro;
+SELECT core.next_item_id();
+ERROR:  permission denied for schema core at character 8

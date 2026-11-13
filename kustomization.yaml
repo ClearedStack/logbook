@@ -37,3 +37,5 @@ configMapGenerator:
       - migrations/0005_public_views.sql
       - migrations/0006_privileges.sql
       - migrations/0007_integrity_checks.sql
+      - migrations/0008_widen_item_id.sql
+      - migrations/0009_item_numbering.sql

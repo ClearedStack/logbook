@@ -6,17 +6,24 @@ restore exit status 0
 15 checks, 0 failures
 
 == It holds the same rows as the original.
-items 5, evaluations 4, decisions 2, proposals 3, queued 5, pauses 2, ledger entries 33, drills 3, migrations 7
+items 5, evaluations 4, decisions 2, proposals 3, queued 5, pauses 2, ledger entries 33, drills 3, migrations 9
 
 == The next item continues the numbering.
 PA-0006
+
+== The default that gives out identifiers came back, with its sequence and its limit.
+default: core.next_item_id()
+numbers run to: 999999999
+next number set after: 9999
+PA-10000
+ERROR:  permission denied for table item
 
 == The checks on writing came back with it.
 ERROR:  E_NEEDS_SUBTOOL: state is a name Logbook has no rule for
 ERROR:  the ledger is append-only: an entry is never changed or removed
 
 == pub_ro still reads the public views and nothing else.
-6
+7
 ERROR:  permission denied for schema core at character 22
 working tables pub_ro can touch: 0
 functions in core pub_ro can call: 0

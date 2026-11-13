@@ -1,0 +1,31 @@
+\set ECHO all
+-- Rule: an item identifier is PA- followed by 4 to 9 digits. Migration 0009
+-- adds that a number has one form: see 17_item_numbering.
+
+-- The shortest and the longest are accepted.
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-0001', 'recorded', 'Sample shortest identifier')
+RETURNING item_id;
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-123456789', 'recorded', 'Sample longest identifier')
+RETURNING item_id;
+
+-- Too few digits, too many digits and the wrong case are refused: E_PARSE.
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-12', 'recorded', 'Sample');
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-1234567890', 'recorded', 'Sample');
+INSERT INTO core.item (item_id, state, title) VALUES ('pa-0001', 'recorded', 'Sample');
+
+-- The first identifier past PA-9999 is accepted when it is supplied.
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-10000', 'recorded', 'Sample ten-thousandth item')
+RETURNING item_id;
+
+-- The rest of a long identifier's record works as before: its history, its
+-- place in the public view and the integrity check of its row.
+INSERT INTO core.ledger (item_id, actor, to_state) VALUES ('PA-123456789', 'trawl', 'recorded')
+RETURNING item_id, to_state;
+SELECT item_id, state FROM pub.item ORDER BY item_id;
+SELECT core.malformed_rows('item') AS malformed_items;
+
+-- The owner of the database can supply an identifier, and one it supplies can
+-- collide with a number given out later. PA-0001 is taken, so the first number
+-- is refused and the next one is given. Muster cannot supply one at all.
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample');
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample given its number') RETURNING item_id;

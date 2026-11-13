@@ -1,0 +1,53 @@
+== one entry of each status is accepted
+== an entry may be about a proposal, or about neither an item nor a proposal
+ queue_id | item_id | proposal_id |   worker    |   lane   |    status     |     lease_token     |    lease_expires_at    |      heartbeat_at      |   error_code    |      enqueued_at       
+----------+---------+-------------+-------------+----------+---------------+---------------------+------------------------+------------------------+-----------------+------------------------
+        1 | PA-0001 |             | sextant     | normal   | waiting       |                     |                        |                        |                 | 2026-01-05 09:00:00+00
+        2 | PA-0001 |             | sextant     | urgent   | leased        | example-lease-token | 2026-01-05 09:05:00+00 | 2026-01-05 09:01:00+00 |                 | 2026-01-05 09:00:00+00
+        3 | PA-0001 |             | trawl       | backfill | completed     |                     |                        |                        |                 | 2026-01-05 09:00:00+00
+        4 | PA-0001 |             | sextant     | normal   | failed        |                     |                        |                        | E_TIMEOUT       | 2026-01-05 09:00:00+00
+        5 | PA-0001 |             | sextant     | normal   | failed        |                     |                        |                        | E_PARSE         | 2026-01-05 09:00:00+00
+        6 | PA-0001 |             | sextant     | normal   | needs_subtool |                     |                        |                        | E_NEEDS_SUBTOOL | 2026-01-05 09:00:00+00
+        7 |         |           1 | countersign | normal   | waiting       |                     |                        |                        |                 | 2026-01-05 09:00:00+00
+        8 |         |             | tidegauge   | normal   | waiting       |                     |                        |                        |                 | 2026-01-05 09:00:00+00
+(8 rows)
+
+== each required column
+ERROR:  E_PARSE: queue.worker is required
+ERROR:  E_PARSE: queue.lane is required
+ERROR:  E_PARSE: queue.status is required
+ERROR:  E_PARSE: queue.enqueued_at is required
+== a worker, a lane or a status outside the known ones is unfamiliar
+ERROR:  E_NEEDS_SUBTOOL: queue.worker is not a known worker
+ERROR:  E_NEEDS_SUBTOOL: queue.lane is not a known lane
+ERROR:  E_NEEDS_SUBTOOL: queue.status is not a known queue status
+== not both an item and a proposal
+ERROR:  E_PARSE: a queue entry may name an item or a proposal, not both
+== a lease has a token and an expiry, and only a lease has them
+ERROR:  E_PARSE: a leased queue entry needs lease_token and lease_expires_at
+ERROR:  E_PARSE: a leased queue entry needs lease_token and lease_expires_at
+ERROR:  E_PARSE: a leased queue entry needs lease_token and lease_expires_at
+ERROR:  E_PARSE: a leased queue entry needs lease_token and lease_expires_at
+ERROR:  E_PARSE: only a leased queue entry may hold lease_token or lease_expires_at
+ERROR:  E_PARSE: only a leased queue entry may hold lease_token or lease_expires_at
+== the error code goes with the status
+ERROR:  E_PARSE: queue.error_code must be E_NEEDS_SUBTOOL when status is needs_subtool
+ERROR:  E_PARSE: queue.error_code must be E_NEEDS_SUBTOOL when status is needs_subtool
+ERROR:  E_PARSE: queue.error_code must be E_TIMEOUT or E_PARSE when status is failed
+ERROR:  E_PARSE: queue.error_code must be E_TIMEOUT or E_PARSE when status is failed
+ERROR:  E_PARSE: queue.error_code must be E_TIMEOUT or E_PARSE when status is failed
+ERROR:  E_PARSE: only a failed or needs_subtool queue entry may hold error_code
+== a lease is taken, kept alive and given back, and the rules apply at each step
+ERROR:  E_PARSE: a leased queue entry needs lease_token and lease_expires_at
+ERROR:  E_PARSE: only a leased queue entry may hold lease_token or lease_expires_at
+ queue_id |  status   | lease_token | lease_expires_at |      heartbeat_at      
+----------+-----------+-------------+------------------+------------------------
+        1 | completed |             |                  | 2026-01-05 09:06:00+00
+(1 row)
+
+== a finished entry may be removed
+ entries 
+---------
+       7
+(1 row)
+

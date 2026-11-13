@@ -1,0 +1,30 @@
+== a drill passes only when all four checks pass
+ drill_id |         ran_at         | decrypt_passed | database_passed | plainforge_passed | lazarette_passed | passed 
+----------+------------------------+----------------+-----------------+-------------------+------------------+--------
+        1 | 2026-01-01 03:00:00+00 | t              | t               | t                 | t                | t
+        2 | 2026-02-01 03:00:00+00 | f              | t               | t                 | t                | f
+        3 | 2026-03-01 03:00:00+00 | t              | f               | t                 | t                | f
+        4 | 2026-04-01 03:00:00+00 | t              | t               | f                 | t                | f
+        5 | 2026-05-01 03:00:00+00 | t              | t               | t                 | f                | f
+        6 | 2026-06-01 03:00:00+00 | f              | f               | f                 | f                | f
+(6 rows)
+
+== each required column
+ERROR:  E_PARSE: restore_drill.ran_at is required
+ERROR:  E_PARSE: restore_drill.decrypt_passed is required
+ERROR:  E_PARSE: restore_drill.database_passed is required
+ERROR:  E_PARSE: restore_drill.plainforge_passed is required
+ERROR:  E_PARSE: restore_drill.lazarette_passed is required
+ERROR:  E_PARSE: restore_drill.ran_at is required
+== the overall result cannot be set by hand
+ERROR:  cannot insert a non-DEFAULT value into column "passed"
+DETAIL:  Column "passed" is a generated column.
+== a recorded drill cannot be rewritten or removed
+ERROR:  permission denied for table restore_drill
+ERROR:  permission denied for table restore_drill
+== what was kept
+ drills | passed 
+--------+--------
+      6 |      1
+(1 row)
+

@@ -1,0 +1,38 @@
+== entries about an item and about a proposal are accepted
+ ledger_id | item_id | proposal_id |    from_state    |     to_state     |   worker    |      recorded_at       
+-----------+---------+-------------+------------------+------------------+-------------+------------------------
+         1 | PA-0001 |             |                  | recorded         | trawl       | 2026-01-05 09:00:00+00
+         2 | PA-0001 |             | recorded         | observed         | sextant     | 2026-01-05 09:30:00+00
+         3 | PA-0001 |             | observed         | screened-out     | assay       | 2026-01-05 10:00:00+00
+         4 | PA-0001 |             | screened-out     | observed         |             | 2026-01-06 09:00:00+00
+         5 |         |           1 |                  | pending_approval |             | 2026-01-07 09:00:00+00
+         6 |         |           1 | pending_approval | declined         | countersign | 2026-01-07 10:00:00+00
+(6 rows)
+
+== each required column
+ERROR:  E_PARSE: ledger.to_state is required
+ERROR:  E_PARSE: ledger.recorded_at is required
+== exactly one item or proposal
+ERROR:  E_PARSE: a ledger entry must name exactly one item or proposal
+ERROR:  E_PARSE: a ledger entry must name exactly one item or proposal
+== for an item, the states are item states
+ERROR:  E_NEEDS_SUBTOOL: ledger.to_state is not a known item state
+ERROR:  E_NEEDS_SUBTOOL: ledger.from_state is not a known item state
+ERROR:  E_NEEDS_SUBTOOL: ledger.to_state is not a known item state
+== for a proposal, the states are proposal statuses
+ERROR:  E_NEEDS_SUBTOOL: ledger.to_state is not a known proposal status
+ERROR:  E_NEEDS_SUBTOOL: ledger.from_state is not a known proposal status
+ERROR:  E_NEEDS_SUBTOOL: ledger.to_state is not a known proposal status
+== a worker outside the ten is unfamiliar
+ERROR:  E_NEEDS_SUBTOOL: ledger.worker is not a known worker
+== an entry about an item or a proposal that is not recorded
+ERROR:  insert or update on table "ledger" violates foreign key constraint "ledger_item_id_fkey"
+DETAIL:  Key (item_id)=(PA-0009) is not present in table "item".
+ERROR:  insert or update on table "ledger" violates foreign key constraint "ledger_proposal_id_fkey"
+DETAIL:  Key (proposal_id)=(9) is not present in table "edit_proposal".
+== what was kept
+ entries 
+---------
+       6
+(1 row)
+

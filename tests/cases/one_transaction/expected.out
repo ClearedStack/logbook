@@ -1,0 +1,40 @@
+== a hand-off whose last step is refused leaves nothing behind
+ERROR:  E_NEEDS_SUBTOOL: ledger.to_state is not a known item state
+ item_id |  state   |       updated_at       
+---------+----------+------------------------
+ PA-0001 | recorded | 2026-01-05 09:00:00+00
+(1 row)
+
+ queue_id | worker  | status 
+----------+---------+--------
+        1 | sextant | leased
+(1 row)
+
+ ledger_entries 
+----------------
+              0
+(1 row)
+
+== the same hand-off, well formed, is kept whole
+ item_id |  state   |       updated_at       
+---------+----------+------------------------
+ PA-0001 | observed | 2026-01-05 09:30:00+00
+(1 row)
+
+ worker  |  status   
+---------+-----------
+ sextant | completed
+ assay   | waiting
+(2 rows)
+
+ item_id | from_state | to_state | worker  |      recorded_at       
+---------+------------+----------+---------+------------------------
+ PA-0001 | recorded   | observed | sextant | 2026-01-05 09:30:00+00
+(1 row)
+
+== times that are not given are the time of the transaction, the same in every row
+ same_time 
+-----------
+ t
+(1 row)
+

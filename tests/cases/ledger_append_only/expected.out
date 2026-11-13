@@ -1,0 +1,35 @@
+== as core_rw: an entry can be added and read
+ ledger_id | item_id | proposal_id | from_state |     to_state     
+-----------+---------+-------------+------------+------------------
+         1 | PA-0001 |             |            | recorded
+         2 |         |           1 |            | pending_approval
+         3 | PA-0001 |             | recorded   | observed
+(3 rows)
+
+== as core_rw: an entry cannot be changed, removed or emptied out
+ERROR:  permission denied for table ledger
+ERROR:  permission denied for table ledger
+ERROR:  permission denied for table ledger
+== as the owner of the table: the same
+ERROR:  permission denied: the ledger is append-only
+ERROR:  permission denied: the ledger is append-only
+ERROR:  permission denied: the ledger is append-only
+ERROR:  permission denied: the ledger is append-only
+== an attempt that would touch no entry is refused too
+ERROR:  permission denied: the ledger is append-only
+ERROR:  permission denied: the ledger is append-only
+== an item or a proposal the ledger mentions cannot be removed from under it
+ERROR:  update or delete on table "item" violates foreign key constraint "ledger_item_id_fkey" on table "ledger"
+DETAIL:  Key (item_id)=(PA-0001) is still referenced from table "ledger".
+ERROR:  update or delete on table "edit_proposal" violates foreign key constraint "ledger_proposal_id_fkey" on table "ledger"
+DETAIL:  Key (proposal_id)=(1) is still referenced from table "ledger".
+ERROR:  update or delete on table "item" violates foreign key constraint "ledger_item_id_fkey" on table "ledger"
+DETAIL:  Key (item_id)=(PA-0001) is still referenced from table "ledger".
+== the ledger is as it was
+ ledger_id | item_id | proposal_id | from_state |     to_state     | worker  |      recorded_at       
+-----------+---------+-------------+------------+------------------+---------+------------------------
+         1 | PA-0001 |             |            | recorded         | trawl   | 2026-01-05 09:00:00+00
+         2 |         |           1 |            | pending_approval |         | 2026-01-07 09:00:00+00
+         3 | PA-0001 |             | recorded   | observed         | sextant | 2026-01-05 09:30:00+00
+(3 rows)
+

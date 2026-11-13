@@ -1,0 +1,44 @@
+== a well-formed item is accepted
+ item_id |  state   |          title          |           source_url           |                           source_hash                            |       created_at       |       updated_at       
+---------+----------+-------------------------+--------------------------------+------------------------------------------------------------------+------------------------+------------------------
+ PA-0001 | recorded | Example rate calculator | https://example.test/tools/one | aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | 2026-01-05 09:00:00+00 | 2026-01-05 09:00:00+00
+(1 row)
+
+== each required column
+ERROR:  E_PARSE: item.item_id is required
+ERROR:  E_PARSE: item.state is required
+ERROR:  E_PARSE: item.title is required
+ERROR:  E_PARSE: item.source_url is required
+ERROR:  E_PARSE: item.source_hash is required
+ERROR:  E_PARSE: item.created_at is required
+ERROR:  E_PARSE: item.updated_at is required
+== the identifier is PA- and four digits
+ERROR:  E_PARSE: item.item_id must be PA- followed by four digits
+ERROR:  E_PARSE: item.item_id must be PA- followed by four digits
+ERROR:  E_PARSE: item.item_id must be PA- followed by four digits
+ERROR:  E_PARSE: item.item_id must be PA- followed by four digits
+ERROR:  E_PARSE: item.item_id must be PA- followed by four digits
+== the title and the source address are not blank
+ERROR:  E_PARSE: item.title must not be blank
+ERROR:  E_PARSE: item.source_url must not be blank
+== the source hash is 64 lowercase hexadecimal characters
+ERROR:  E_PARSE: item.source_hash must be 64 lowercase hexadecimal characters
+ERROR:  E_PARSE: item.source_hash must be 64 lowercase hexadecimal characters
+== a state outside the fourteen is unfamiliar, not broken
+ERROR:  E_NEEDS_SUBTOOL: item.state is not a known item state
+== the rules apply to a change as well
+ERROR:  E_NEEDS_SUBTOOL: item.state is not a known item state
+ERROR:  E_PARSE: item.title must not be blank
+== nothing that was refused was kept
+ item_id |    state     |          title          |       updated_at       
+---------+--------------+-------------------------+------------------------
+ PA-0001 | screened-out | Example rate calculator | 2026-01-06 09:00:00+00
+(1 row)
+
+== the same address may be recorded again as a new item
+ item_id |    state     
+---------+--------------
+ PA-0001 | screened-out
+ PA-0003 | recorded
+(2 rows)
+

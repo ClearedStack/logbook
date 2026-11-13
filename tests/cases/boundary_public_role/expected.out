@@ -1,0 +1,112 @@
+== as pub_ro: every working table is refused
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.item;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.queue;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.evaluation;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.decision;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.edit_proposal;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.ledger;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.restore_drill;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.item_state;
+                      ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.migration;
+                      ^
+== as pub_ro: every public view can be read
+ item 
+------
+    0
+(1 row)
+
+ item_history 
+--------------
+            0
+(1 row)
+
+ evaluation 
+------------
+          0
+(1 row)
+
+ decision 
+----------
+        0
+(1 row)
+
+ queue_length 
+--------------
+            0
+(1 row)
+
+ edit_proposal 
+---------------
+             0
+(1 row)
+
+ restore_drill 
+---------------
+             0
+(1 row)
+
+== as pub_ro: nothing can be written or made
+ERROR:  permission denied for view item
+ERROR:  permission denied for view item
+ERROR:  permission denied for view item
+ERROR:  permission denied for schema pub
+LINE 1: CREATE TABLE pub.example (n integer);
+                     ^
+ERROR:  permission denied for schema public
+LINE 1: CREATE TABLE public.example (n integer);
+                     ^
+ERROR:  permission denied to create temporary tables in database "case_boundary_public_role"
+LINE 1: CREATE TEMPORARY TABLE example (n integer);
+                               ^
+ERROR:  permission denied for schema core
+LINE 1: SELECT core.refuse_parse('example');
+               ^
+== if the schema were ever opened to pub_ro by mistake, each table would still refuse
+ERROR:  permission denied for table item
+ERROR:  permission denied for table queue
+ERROR:  permission denied for table evaluation
+ERROR:  permission denied for table decision
+ERROR:  permission denied for table edit_proposal
+ERROR:  permission denied for table ledger
+ERROR:  permission denied for table restore_drill
+ERROR:  permission denied for table item_state
+ERROR:  permission denied for table migration
+== a login that is a member of pub_ro, connecting for itself
+ current_user 
+--------------
+ example_conn
+(1 row)
+
+ item 
+------
+    0
+(1 row)
+
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.item;
+                      ^
+ERROR:  permission denied to set role "core_rw"
+ERROR:  permission denied to set role "backup_ro"
+== a login that is a member of no role cannot connect at all
+ may_connect 
+-------------
+ f
+(1 row)
+

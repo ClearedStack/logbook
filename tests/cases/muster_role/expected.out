@@ -1,0 +1,47 @@
+== it does its work in the working tables
+ items | evaluations | decisions | proposals | queue_entries | ledger_entries | drills 
+-------+-------------+-----------+-----------+---------------+----------------+--------
+     1 |           1 |         1 |         1 |             1 |              1 |      1
+(1 row)
+
+== it reads the known sets and the migration record
+ item_states | lanes | workers | migrations 
+-------------+-------+---------+------------
+          14 |     3 |      10 |          3
+(1 row)
+
+== it cannot remove an item or a proposal
+ERROR:  permission denied for table item
+ERROR:  permission denied for table edit_proposal
+== it cannot rewrite or remove an evaluation or a decision
+ERROR:  permission denied for table evaluation
+ERROR:  permission denied for table evaluation
+ERROR:  permission denied for table decision
+ERROR:  permission denied for table decision
+== it cannot change a known set or the migration record
+ERROR:  permission denied for table item_state
+ERROR:  permission denied for table lane
+ERROR:  permission denied for table worker
+ERROR:  permission denied for table outcome
+ERROR:  permission denied for table migration
+== it cannot empty a table or change the schema
+ERROR:  permission denied for table queue
+ERROR:  must be owner of table item
+ERROR:  must be owner of table queue
+ERROR:  must be owner of table ledger
+ERROR:  permission denied for schema core
+LINE 1: CREATE TABLE core.example (n integer);
+                     ^
+== it has no business in pub
+ERROR:  permission denied for schema pub
+LINE 1: SELECT * FROM pub.item;
+                      ^
+== the backup role reads everything and writes nothing
+ items | ledger_entries | item_states | public_items 
+-------+----------------+-------------+--------------
+     1 |              1 |          14 |            1
+(1 row)
+
+ERROR:  permission denied for table ledger
+ERROR:  permission denied for table item
+ERROR:  permission denied for table queue

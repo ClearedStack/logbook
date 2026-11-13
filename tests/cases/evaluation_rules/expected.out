@@ -1,0 +1,38 @@
+== a passed evaluation and a failed one are accepted
+ evaluation_id | item_id | gates_passed |         reason          | score | recommendation |      evaluated_at      
+---------------+---------+--------------+-------------------------+-------+----------------+------------------------
+             1 | PA-0001 | t            |                         |    82 | build          | 2026-01-05 10:00:00+00
+             2 | PA-0001 | f            | Does more than one job. |       |                | 2026-01-05 11:00:00+00
+(2 rows)
+
+== each required column
+ERROR:  E_PARSE: evaluation.item_id is required
+ERROR:  E_PARSE: evaluation.gates_passed is required
+ERROR:  E_PARSE: evaluation.evaluated_at is required
+== when the gates are passed: a score from 20 to 100 and a recommendation
+ERROR:  E_PARSE: evaluation.score must be 20 to 100 when the gates are passed
+ERROR:  E_PARSE: evaluation.score must be 20 to 100 when the gates are passed
+ERROR:  E_PARSE: evaluation.score must be 20 to 100 when the gates are passed
+ERROR:  E_PARSE: evaluation.recommendation is required when the gates are passed
+== the edges of the score are accepted
+== a recommendation outside the four is unfamiliar
+ERROR:  E_NEEDS_SUBTOOL: evaluation.recommendation is not a known recommendation
+ERROR:  E_NEEDS_SUBTOOL: evaluation.recommendation is not a known recommendation
+ERROR:  E_NEEDS_SUBTOOL: evaluation.recommendation is not a known recommendation
+== when a gate is failed: a reason, and no score or recommendation
+ERROR:  E_PARSE: evaluation.reason is required when a gate is failed
+ERROR:  E_PARSE: evaluation.reason is required when a gate is failed
+ERROR:  E_PARSE: evaluation.score and recommendation must be empty when a gate is failed
+ERROR:  E_PARSE: evaluation.score and recommendation must be empty when a gate is failed
+== an evaluation of an item that is not recorded
+ERROR:  insert or update on table "evaluation" violates foreign key constraint "evaluation_item_id_fkey"
+DETAIL:  Key (item_id)=(PA-0009) is not present in table "item".
+== what was kept
+ evaluation_id | gates_passed |         reason          | score | recommendation 
+---------------+--------------+-------------------------+-------+----------------
+             1 | t            |                         |    82 | build
+             2 | f            | Does more than one job. |       | 
+            10 | t            |                         |    20 | reject
+            11 | t            |                         |   100 | link
+(4 rows)
+

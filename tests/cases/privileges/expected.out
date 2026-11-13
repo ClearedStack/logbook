@@ -1,0 +1,79 @@
+== rights on every table and view
+      relation      | kind  |           core_rw           | pub_ro | backup_ro | anyone 
+--------------------+-------+-----------------------------+--------+-----------+--------
+ core.decision      | table | SELECT INSERT               | -      | SELECT    | -
+ core.edit_kind     | table | SELECT                      | -      | SELECT    | -
+ core.edit_proposal | table | SELECT INSERT UPDATE        | -      | SELECT    | -
+ core.edit_status   | table | SELECT                      | -      | SELECT    | -
+ core.evaluation    | table | SELECT INSERT               | -      | SELECT    | -
+ core.item          | table | SELECT INSERT UPDATE        | -      | SELECT    | -
+ core.item_state    | table | SELECT                      | -      | SELECT    | -
+ core.lane          | table | SELECT                      | -      | SELECT    | -
+ core.ledger        | table | SELECT INSERT               | -      | SELECT    | -
+ core.migration     | table | SELECT                      | -      | SELECT    | -
+ core.outcome       | table | SELECT                      | -      | SELECT    | -
+ core.queue         | table | SELECT INSERT UPDATE DELETE | -      | SELECT    | -
+ core.queue_status  | table | SELECT                      | -      | SELECT    | -
+ core.restore_drill | table | SELECT INSERT               | -      | SELECT    | -
+ core.worker        | table | SELECT                      | -      | SELECT    | -
+ pub.decision       | view  | -                           | SELECT | SELECT    | -
+ pub.edit_proposal  | view  | -                           | SELECT | SELECT    | -
+ pub.evaluation     | view  | -                           | SELECT | SELECT    | -
+ pub.item           | view  | -                           | SELECT | SELECT    | -
+ pub.item_history   | view  | -                           | SELECT | SELECT    | -
+ pub.queue_length   | view  | -                           | SELECT | SELECT    | -
+ pub.restore_drill  | view  | -                           | SELECT | SELECT    | -
+(22 rows)
+
+== rights on every schema
+ schema | core_rw | pub_ro | backup_ro | anyone 
+--------+---------+--------+-----------+--------
+ core   | USAGE   | -      | USAGE     | -
+ pub    | -       | USAGE  | USAGE     | -
+ public | -       | -      | -         | -
+(3 rows)
+
+== rights on the database
+   role    |   may   
+-----------+---------
+ core_rw   | CONNECT
+ pub_ro    | CONNECT
+ backup_ro | CONNECT
+ public    | -
+(4 rows)
+
+== who may call each function in core
+      function       | core_rw | pub_ro | backup_ro | anyone 
+---------------------+---------+--------+-----------+--------
+ decision_rules      | f       | f      | f         | f
+ edit_proposal_rules | f       | f      | f         | f
+ evaluation_rules    | f       | f      | f         | f
+ item_rules          | f       | f      | f         | f
+ ledger_append_only  | f       | f      | f         | f
+ ledger_rules        | f       | f      | f         | f
+ queue_rules         | f       | f      | f         | f
+ refuse_parse        | t       | f      | f         | f
+ refuse_unfamiliar   | t       | f      | f         | f
+ restore_drill_rules | f       | f      | f         | f
+(10 rows)
+
+== the roles themselves
+   role    | login | superuser | createdb | createrole | replication | bypassrls | has_password 
+-----------+-------+-----------+----------+------------+-------------+-----------+--------------
+ backup_ro | f     | f         | f        | f          | f           | f         | f
+ core_rw   | f     | f         | f        | f          | f           | f         | f
+ pub_ro    | f     | f         | f        | f          | f           | f         | f
+(3 rows)
+
+== everything in pub is a view with a security barrier
+   relation    | is_view | security_barrier 
+---------------+---------+------------------
+ decision      | t       | t
+ edit_proposal | t       | t
+ evaluation    | t       | t
+ item          | t       | t
+ item_history  | t       | t
+ queue_length  | t       | t
+ restore_drill | t       | t
+(7 rows)
+

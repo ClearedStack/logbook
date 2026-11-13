@@ -1,0 +1,89 @@
+== the migrations applied
+ version |       name        
+---------+-------------------
+       1 | roles_and_schemas
+       2 | working_records
+       3 | public_views
+(3 rows)
+
+== the fourteen item states
+     state     
+---------------
+ approved
+ building
+ discovered
+ linked
+ live
+ merged
+ needs_subtool
+ observed
+ parked
+ recorded
+ rejected
+ retired
+ scored
+ screened-out
+(14 rows)
+
+== the three lanes, in the order they are emptied
+   lane   | drain_order 
+----------+-------------
+ urgent   |           1
+ normal   |           2
+ backfill |           3
+(3 rows)
+
+== the ten workers
+   worker    | stage 
+-------------+-------
+ trawl       |     1
+ sextant     |     2
+ assay       |     3
+ countersign |     4
+ waybill     |     5
+ moldloft    |     6
+ shakedown   |     7
+ chartroom   |     8
+ tidegauge   |     9
+ bellbuoy    |    10
+(10 rows)
+
+== the queue statuses
+    status     
+---------------
+ completed
+ failed
+ leased
+ needs_subtool
+ waiting
+(5 rows)
+
+== the outcomes
+ outcome  | recommendable 
+----------+---------------
+ build    | t
+ link     | t
+ merge    | f
+ override | f
+ park     | t
+ reject   | t
+(6 rows)
+
+== the kinds of edit
+  kind  
+--------
+ CONFIG
+ DATA
+ ISSUE
+(3 rows)
+
+== the proposal statuses
+      status      
+------------------
+ approved
+ building
+ declined
+ live
+ pending_approval
+(5 rows)
+

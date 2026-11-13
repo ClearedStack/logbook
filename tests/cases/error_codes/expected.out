@@ -1,0 +1,19 @@
+== broken data: E_PARSE, with SQLSTATE 22000
+ERROR:  E_PARSE: item.item_id must be PA- followed by four digits
+22000
+== valid and unfamiliar data: E_NEEDS_SUBTOOL, with SQLSTATE 0A000
+ERROR:  E_NEEDS_SUBTOOL: item.state is not a known item state
+0A000
+== a write the role has no right to make: permission denied, with SQLSTATE 42501
+ERROR:  permission denied for table ledger
+42501
+ERROR:  permission denied: the ledger is append-only
+42501
+ERROR:  permission denied for schema core
+LINE 1: SELECT * FROM core.item;
+                      ^
+42501
+== an error message never repeats a value from the row
+ERROR:  E_PARSE: only a leased queue entry may hold lease_token or lease_expires_at
+ERROR:  E_PARSE: queue.worker is required
+ERROR:  E_PARSE: item.title is required

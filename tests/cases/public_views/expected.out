@@ -1,0 +1,81 @@
+== pub.item
+ item_id |          title          |    state     |       created_at       |       updated_at       
+---------+-------------------------+--------------+------------------------+------------------------
+ PA-0001 | Example rate calculator | scored       | 2026-01-05 09:00:00+00 | 2026-01-05 10:00:00+00
+ PA-0002 | Example suite           | screened-out | 2026-01-05 09:10:00+00 | 2026-01-05 11:00:00+00
+(2 rows)
+
+== pub.item_history
+ ledger_id | item_id | from_state | to_state | worker  |      recorded_at       
+-----------+---------+------------+----------+---------+------------------------
+         1 | PA-0001 |            | recorded | trawl   | 2026-01-05 09:00:00+00
+         2 | PA-0001 | recorded   | observed | sextant | 2026-01-05 09:30:00+00
+         4 | PA-0001 | observed   | scored   | assay   | 2026-01-05 10:00:00+00
+         5 | PA-0002 |            | recorded | trawl   | 2026-01-05 09:10:00+00
+(4 rows)
+
+== pub.evaluation
+ evaluation_id | item_id | gates_passed |         reason          | score | recommendation |      evaluated_at      
+---------------+---------+--------------+-------------------------+-------+----------------+------------------------
+             1 | PA-0001 | t            |                         |    82 | build          | 2026-01-05 10:00:00+00
+             2 | PA-0002 | f            | Does more than one job. |       |                | 2026-01-05 11:00:00+00
+(2 rows)
+
+== pub.decision
+ decision_id | item_id | outcome  |                 reason                  |       decided_at       
+-------------+---------+----------+-----------------------------------------+------------------------
+           1 | PA-0001 | park     | Waiting for a final rule.               | 2026-01-06 09:00:00+00
+           2 | PA-0002 | override | The gate was applied to the wrong page. | 2026-01-06 09:05:00+00
+(2 rows)
+
+== pub.queue_length
+   worker    |  lane  |    status     | entries 
+-------------+--------+---------------+---------
+ countersign | normal | waiting       |       2
+ sextant     | normal | needs_subtool |       1
+ sextant     | urgent | leased        |       1
+(3 rows)
+
+== pub.edit_proposal
+ proposal_id |  kind  |              target              |      status      |     payload      |      submitted_at      
+-------------+--------+----------------------------------+------------------+------------------+------------------------
+           1 | DATA   | catalog/example-tool/description | pending_approval |                  | 2026-01-07 09:00:00+00
+           2 | DATA   | catalog/example-tool/title       | approved         | APPROVED-PAYLOAD | 2026-01-07 09:01:00+00
+           3 | CONFIG | assay/example-setting            | building         | BUILDING-PAYLOAD | 2026-01-07 09:02:00+00
+           4 | ISSUE  | sextant/example-page             | live             | LIVE-PAYLOAD     | 2026-01-07 09:03:00+00
+           5 | DATA   | catalog/example-tool/summary     | declined         |                  | 2026-01-07 09:04:00+00
+(5 rows)
+
+== pub.restore_drill
+ drill_id |         ran_at         | decrypt_passed | database_passed | plainforge_passed | lazarette_passed | passed 
+----------+------------------------+----------------+-----------------+-------------------+------------------+--------
+        1 | 2026-01-01 03:00:00+00 | t              | t               | t                 | t                | t
+        2 | 2026-02-01 03:00:00+00 | t              | t               | f                 | t                | f
+(2 rows)
+
+== a reader cannot filter on a payload that is not shown
+ proposal_id 
+-------------
+           2
+           3
+           4
+(3 rows)
+
+== the columns of every public view
+     view      |                                            columns                                             
+---------------+------------------------------------------------------------------------------------------------
+ decision      | decision_id, item_id, outcome, reason, decided_at
+ edit_proposal | proposal_id, kind, target, status, payload, submitted_at
+ evaluation    | evaluation_id, item_id, gates_passed, reason, score, recommendation, evaluated_at
+ item          | item_id, title, state, created_at, updated_at
+ item_history  | ledger_id, item_id, from_state, to_state, worker, recorded_at
+ queue_length  | worker, lane, status, entries
+ restore_drill | drill_id, ran_at, decrypt_passed, database_passed, plainforge_passed, lazarette_passed, passed
+(7 rows)
+
+== no public view shows a private value
+ leaks 
+-------
+     0
+(1 row)
+

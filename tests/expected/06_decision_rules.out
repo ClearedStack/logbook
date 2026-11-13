@@ -1,0 +1,73 @@
+-- Rules for a decision: one of six outcomes, about a recorded evaluation, with
+-- a written reason whenever it is not what the evaluation recommended.
+--
+-- In the sample record evaluation 1 recommends build, evaluation 2 failed a
+-- gate and recommends nothing, and evaluation 3 recommends park.
+-- Following the recommendation needs no reason.
+INSERT INTO core.decision (evaluation_id, outcome) VALUES (3, 'park') RETURNING decision_id, outcome, reason;
+ decision_id | outcome | reason 
+-------------+---------+--------
+           3 | park    | 
+(1 row)
+
+-- Overriding it needs one: E_PARSE without, accepted with.
+INSERT INTO core.decision (evaluation_id, outcome) VALUES (3, 'build');
+ERROR:  E_PARSE: reason for an override is missing
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (3, 'build', '  ');
+ERROR:  E_PARSE: reason for an override is missing
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (3, 'build', 'The sample blocker has cleared.')
+RETURNING decision_id, outcome, reason;
+ decision_id | outcome |             reason              
+-------------+---------+---------------------------------
+           6 | build   | The sample blocker has cleared.
+(1 row)
+
+-- Merge and reopen are never what an evaluation recommends, so they always need a reason.
+INSERT INTO core.decision (evaluation_id, outcome) VALUES (1, 'merge');
+ERROR:  E_PARSE: reason for an override is missing
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (1, 'merge', 'It belongs inside the sample planner.')
+RETURNING decision_id, outcome, reason;
+ decision_id | outcome |                reason                 
+-------------+---------+---------------------------------------
+           8 | merge   | It belongs inside the sample planner.
+(1 row)
+
+-- Reopening a screened-out item is an override, so it needs a reason too.
+INSERT INTO core.decision (evaluation_id, outcome) VALUES (2, 'reopen');
+ERROR:  E_PARSE: reason for an override is missing
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (2, 'reopen', 'The idea was split into one job.')
+RETURNING decision_id, outcome, reason;
+ decision_id | outcome |              reason              
+-------------+---------+----------------------------------
+          10 | reopen  | The idea was split into one job.
+(1 row)
+
+-- The outcome is one of six: missing or broken is E_PARSE, unknown is E_NEEDS_SUBTOOL.
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (1, NULL, 'Sample.');
+ERROR:  E_PARSE: outcome is missing
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (1, 'screened-out', 'Sample.');
+ERROR:  E_PARSE: outcome is not a well-formed name
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (1, 'postpone', 'Sample.');
+ERROR:  E_NEEDS_SUBTOOL: outcome is a name Logbook has no rule for
+-- A decision is about an evaluation that exists: E_PARSE.
+INSERT INTO core.decision (evaluation_id, outcome) VALUES (999, 'build');
+ERROR:  E_PARSE: evaluation_id does not name a recorded evaluation
+INSERT INTO core.decision (evaluation_id, outcome) VALUES (NULL, 'build');
+ERROR:  E_PARSE: evaluation_id does not name a recorded evaluation
+-- A reason, when given, is real text of a sensible length: E_PARSE.
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (1, 'build', '');
+ERROR:  E_PARSE: reason is missing
+INSERT INTO core.decision (evaluation_id, outcome, reason) VALUES (1, 'build', repeat('x', 2001));
+ERROR:  E_PARSE: reason is longer than 2000 bytes
+-- The decision log, as the public sees it.
+SELECT decision_id, item_id, recommendation, outcome, overridden, reason FROM pub.decision ORDER BY decision_id;
+ decision_id | item_id | recommendation | outcome | overridden |                      reason                      
+-------------+---------+----------------+---------+------------+--------------------------------------------------
+           1 | PA-0001 | build          | build   | f          | 
+           2 | PA-0005 | build          | park    | t          | Held until the sample rule it rests on is final.
+           3 | PA-0004 | park           | park    | f          | 
+           6 | PA-0004 | park           | build   | t          | The sample blocker has cleared.
+           8 | PA-0001 | build          | merge   | t          | It belongs inside the sample planner.
+          10 | PA-0002 |                | reopen  | t          | The idea was split into one job.
+(6 rows)
+

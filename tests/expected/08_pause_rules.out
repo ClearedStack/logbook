@@ -1,0 +1,52 @@
+-- Rules for a pause: it names the worker that stopped, the pattern it had no
+-- rule for and the state to go back to, and an item has one open pause at most.
+-- Every open pause for one worker and pattern, which is what a replay acts on.
+SELECT pause_id, item_id, paused_from FROM core.pause
+WHERE worker = 'sextant' AND pattern = 'sextant.e-needs-subtool.sample-form-layout' AND replayed_at IS NULL
+ORDER BY pause_id;
+ pause_id | item_id | paused_from 
+----------+---------+-------------
+        2 | PA-0003 | recorded
+(1 row)
+
+-- An item that is already paused cannot be paused again.
+INSERT INTO core.pause (item_id, worker, pattern, paused_from)
+VALUES ('PA-0003', 'sextant', 'sextant.e-needs-subtool.another-layout', 'recorded');
+ERROR:  duplicate key value violates unique constraint "pause_one_open"
+-- Once it has been replayed, it can be.
+UPDATE core.pause SET replayed_at = '2026-01-07 12:00+00' WHERE pause_id = 2;
+INSERT INTO core.pause (item_id, worker, pattern, paused_from, paused_at)
+VALUES ('PA-0003', 'sextant', 'sextant.e-needs-subtool.another-layout', 'recorded', '2026-01-07 13:00+00')
+RETURNING pause_id, item_id, replayed_at;
+ pause_id | item_id | replayed_at 
+----------+---------+-------------
+        4 | PA-0003 | 
+(1 row)
+
+-- The state to go back to is one of the fourteen, and not needs_subtool itself.
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'assay', 'sample.pattern', NULL);
+ERROR:  E_PARSE: paused_from is missing
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'assay', 'sample.pattern', 'screened-out');
+ERROR:  E_PARSE: paused_from is not a well-formed name
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'assay', 'sample.pattern', 'waiting');
+ERROR:  E_NEEDS_SUBTOOL: paused_from is a name Logbook has no rule for
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'assay', 'sample.pattern', 'needs_subtool');
+ERROR:  E_PARSE: paused_from is the state before the pause, so it cannot be needs_subtool
+-- The worker is a well-formed name and the pattern is real text: E_PARSE.
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', NULL, 'sample.pattern', 'observed');
+ERROR:  E_PARSE: worker is missing
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'Assay!', 'sample.pattern', 'observed');
+ERROR:  E_PARSE: worker is not a well-formed name
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'assay', NULL, 'observed');
+ERROR:  E_PARSE: pattern is missing
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'assay', '', 'observed');
+ERROR:  E_PARSE: pattern is missing
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0004', 'assay', repeat('x', 201), 'observed');
+ERROR:  E_PARSE: pattern is longer than 200 bytes
+-- A replay cannot come before the pause: E_PARSE.
+INSERT INTO core.pause (item_id, worker, pattern, paused_from, paused_at, replayed_at)
+VALUES ('PA-0004', 'assay', 'sample.pattern', 'observed', '2026-01-08 12:00+00', '2026-01-08 11:00+00');
+ERROR:  E_PARSE: replayed_at cannot be earlier than paused_at
+-- A pause is about an item that exists.
+INSERT INTO core.pause (item_id, worker, pattern, paused_from) VALUES ('PA-0999', 'assay', 'sample.pattern', 'observed');
+ERROR:  insert or update on table "pause" violates foreign key constraint "pause_item_id_fkey"

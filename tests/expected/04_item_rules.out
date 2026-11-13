@@ -1,0 +1,109 @@
+-- Rules for an item: an identifier of the form PA-0001, one of the fourteen
+-- states, a title, and an address no other item has.
+-- The fourteen states, each accepted.
+BEGIN;
+INSERT INTO core.item (state, title)
+SELECT state, 'Sample item in state ' || state FROM unnest(core.item_states()) AS state
+RETURNING item_id, state;
+ item_id |     state     
+---------+---------------
+ PA-0006 | discovered
+ PA-0007 | recorded
+ PA-0008 | observed
+ PA-0009 | needs_subtool
+ PA-0010 | screened_out
+ PA-0011 | scored
+ PA-0012 | parked
+ PA-0013 | approved
+ PA-0014 | building
+ PA-0015 | live
+ PA-0016 | rejected
+ PA-0017 | linked
+ PA-0018 | merged
+ PA-0019 | retired
+(14 rows)
+
+ROLLBACK;
+-- A broken identifier is refused: E_PARSE.
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-12', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-00012', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+INSERT INTO core.item (item_id, state, title) VALUES ('pa-0012', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-001X', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+INSERT INTO core.item (item_id, state, title) VALUES (NULL, 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+-- A missing or broken state is refused: E_PARSE.
+INSERT INTO core.item (state, title) VALUES (NULL, 'Sample');
+ERROR:  E_PARSE: state is missing
+INSERT INTO core.item (state, title) VALUES ('', 'Sample');
+ERROR:  E_PARSE: state is not a well-formed name
+INSERT INTO core.item (state, title) VALUES ('screened-out', 'Sample');
+ERROR:  E_PARSE: state is not a well-formed name
+INSERT INTO core.item (state, title) VALUES ('live; DROP TABLE core.item', 'Sample');
+ERROR:  E_PARSE: state is not a well-formed name
+-- A well-formed state Logbook does not know is refused: E_NEEDS_SUBTOOL.
+INSERT INTO core.item (state, title) VALUES ('archived', 'Sample');
+ERROR:  E_NEEDS_SUBTOOL: state is a name Logbook has no rule for
+INSERT INTO core.item (state, title) VALUES ('Live', 'Sample');
+ERROR:  E_NEEDS_SUBTOOL: state is a name Logbook has no rule for
+UPDATE core.item SET state = 'paused' WHERE item_id = 'PA-0001';
+ERROR:  E_NEEDS_SUBTOOL: state is a name Logbook has no rule for
+-- A missing, blank, overlong or damaged title is refused: E_PARSE.
+INSERT INTO core.item (state, title) VALUES ('recorded', NULL);
+ERROR:  E_PARSE: title is missing
+INSERT INTO core.item (state, title) VALUES ('recorded', '   ');
+ERROR:  E_PARSE: title is missing
+INSERT INTO core.item (state, title) VALUES ('recorded', repeat('x', 201));
+ERROR:  E_PARSE: title is longer than 200 bytes
+INSERT INTO core.item (state, title) VALUES ('recorded', 'Sample' || chr(7));
+ERROR:  E_PARSE: title holds control characters
+INSERT INTO core.item (state, title, address) VALUES ('recorded', 'Sample', ' ');
+ERROR:  E_PARSE: address is missing
+-- A refusal never repeats the value it refused.
+INSERT INTO core.item (state, title) VALUES ('made_up_secret_value', 'Sample');
+ERROR:  E_NEEDS_SUBTOOL: state is a name Logbook has no rule for
+-- The hash is taken from the address, and is the same on every machine.
+SELECT item_id, address, address_sha256 FROM core.item ORDER BY item_id;
+ item_id |              address              |                          address_sha256                          
+---------+-----------------------------------+------------------------------------------------------------------
+ PA-0001 | https://tools.example/page-count  | 1f1d0ed5b00c62ec764d7d0acf59ebc9a2bcd80472055320a856b7450e356e0d
+ PA-0002 | https://tools.example/suite       | ef2fc355e41db8cf3b5095e27347e010041ce5c050c567cb3488ee72aaf8d910
+ PA-0003 | https://tools.example/form-reader | e90cf87c47bb18de1b7ba822c37c82e5cac7abf4c590f35acf5cba98cf3b4173
+ PA-0004 | https://tools.example/thresholds  | 36a1f4e1bc79b64d6a977bbbb383ba4bc277a5738df8de06023fe9abf30cbb60
+ PA-0005 |                                   | 
+(5 rows)
+
+INSERT INTO core.item (state, title, address, address_sha256)
+VALUES ('recorded', 'Sample', 'https://tools.example/other', repeat('0', 64));
+ERROR:  cannot insert a non-DEFAULT value into column "address_sha256"
+-- An address that is already recorded cannot be recorded again.
+INSERT INTO core.item (state, title, address)
+VALUES ('discovered', 'Sample page-count planner, seen again', 'https://tools.example/page-count');
+ERROR:  duplicate key value violates unique constraint "item_address_sha256_key"
+-- Nothing above was kept.
+SELECT count(*) AS items FROM core.item;
+ items 
+-------
+     5
+(1 row)
+
+-- A refused or abandoned insert still uses up its number, so identifiers can
+-- have gaps. They stop at PA-9999: Logbook refuses to go past it, and does
+-- not invent a longer identifier.
+SELECT setval('core.item_number', 9998);
+ setval 
+--------
+   9998
+(1 row)
+
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample last item') RETURNING item_id;
+ item_id 
+---------
+ PA-9999
+(1 row)
+
+INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item too many');
+ERROR:  nextval: reached maximum value of sequence "item_number" (9999)

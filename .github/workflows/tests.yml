@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  saved-examples:
+    name: Saved examples on postgres:17-alpine
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same limits Logbook is given in the cluster: an ordinary user, a
+      # read-only filesystem, no capabilities, no way to gain privileges and
+      # 256 MiB of memory. The tests also need no network. The only writable
+      # place is a temporary directory held in that same memory.
+      - name: Run every saved example
+        run: |
+          docker run --rm \
+            --user postgres \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --memory 256m --memory-swap 256m \
+            --network none \
+            --tmpfs /tmp:rw,exec,nosuid,mode=1777 \
+            --volume "$PWD:/logbook:ro" \
+            --workdir /logbook \
+            postgres:17-alpine sh tests/run.sh

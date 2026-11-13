@@ -1,0 +1,81 @@
+-- Rules for the queue: work is for a named worker, in one of three lanes, and
+-- a lease is whole or absent. Work is taken urgent first, then normal, then
+-- backfill, and within a lane in the order it arrived.
+-- The order in which tidegauge's work is taken, whatever order it arrived in.
+SELECT queue_id, lane, lane_rank, queued_at FROM core.queue
+WHERE worker = 'tidegauge'
+ORDER BY lane_rank, queue_id;
+ queue_id |   lane   | lane_rank |       queued_at        
+----------+----------+-----------+------------------------
+        4 | urgent   |         1 | 2026-01-11 03:00:00+00
+        3 | normal   |         2 | 2026-01-11 02:00:00+00
+        5 | normal   |         2 | 2026-01-11 04:00:00+00
+        2 | backfill |         3 | 2026-01-11 01:00:00+00
+(4 rows)
+
+-- The lane decides the rank; it cannot be set by hand.
+INSERT INTO core.queue (worker, lane, lane_rank) VALUES ('tidegauge', 'backfill', 1);
+ERROR:  cannot insert a non-DEFAULT value into column "lane_rank"
+-- The three lanes, each accepted.
+BEGIN;
+INSERT INTO core.queue (worker, lane) SELECT 'sextant', lane FROM unnest(core.lanes()) AS lane
+RETURNING lane, lane_rank;
+   lane   | lane_rank 
+----------+-----------
+ urgent   |         1
+ normal   |         2
+ backfill |         3
+(3 rows)
+
+ROLLBACK;
+-- A lane is one of three: missing or broken is E_PARSE, unknown is E_NEEDS_SUBTOOL.
+INSERT INTO core.queue (worker, lane) VALUES ('sextant', NULL);
+ERROR:  E_PARSE: lane is missing
+INSERT INTO core.queue (worker, lane) VALUES ('sextant', 'very urgent');
+ERROR:  E_PARSE: lane is not a well-formed name
+INSERT INTO core.queue (worker, lane) VALUES ('sextant', 'express');
+ERROR:  E_NEEDS_SUBTOOL: lane is a name Logbook has no rule for
+-- The worker is a well-formed name: E_PARSE.
+INSERT INTO core.queue (worker, lane) VALUES (NULL, 'normal');
+ERROR:  E_PARSE: worker is missing
+INSERT INTO core.queue (worker, lane) VALUES ('Sextant', 'normal');
+ERROR:  E_PARSE: worker is not a well-formed name
+INSERT INTO core.queue (worker, lane) VALUES ('sextant worker', 'normal');
+ERROR:  E_PARSE: worker is not a well-formed name
+INSERT INTO core.queue (worker, lane) VALUES (repeat('a', 101), 'normal');
+ERROR:  E_PARSE: worker is not a well-formed name
+-- Work is about an item, a proposal or neither, never both: E_PARSE.
+INSERT INTO core.queue (worker, lane, item_id, proposal_id) VALUES ('bellbuoy', 'urgent', 'PA-0001', 2);
+ERROR:  E_PARSE: a queue entry is about an item or a proposal, not both
+INSERT INTO core.queue (worker, lane, proposal_id) VALUES ('bellbuoy', 'urgent', 2) RETURNING queue_id, proposal_id;
+ queue_id | proposal_id 
+----------+-------------
+       17 |           2
+(1 row)
+
+-- A lease has a token and an end time together, and a heartbeat needs a lease: E_PARSE.
+INSERT INTO core.queue (worker, lane, lease_token) VALUES ('sextant', 'normal', '00000000-0000-4000-8000-000000000009');
+ERROR:  E_PARSE: a lease has both a token and an end time, or neither
+INSERT INTO core.queue (worker, lane, leased_until) VALUES ('sextant', 'normal', '2999-01-01 00:00+00');
+ERROR:  E_PARSE: a lease has both a token and an end time, or neither
+INSERT INTO core.queue (worker, lane, heartbeat_at) VALUES ('sextant', 'normal', '2026-01-11 00:00+00');
+ERROR:  E_PARSE: a heartbeat belongs to a lease
+UPDATE core.queue SET lease_token = NULL WHERE queue_id = 3;
+ERROR:  E_PARSE: a lease has both a token and an end time, or neither
+INSERT INTO core.queue (worker, lane, attempt) VALUES ('sextant', 'normal', -1);
+ERROR:  E_PARSE: attempt is a count of 0 or more
+INSERT INTO core.queue (worker, lane, attempt) VALUES ('sextant', 'normal', NULL);
+ERROR:  E_PARSE: attempt is a count of 0 or more
+-- Releasing a lease clears all of it.
+UPDATE core.queue SET lease_token = NULL, leased_until = NULL, heartbeat_at = NULL WHERE queue_id = 3
+RETURNING queue_id, lease_token, leased_until, heartbeat_at;
+ queue_id | lease_token | leased_until | heartbeat_at 
+----------+-------------+--------------+--------------
+        3 |             |              | 
+(1 row)
+
+-- Work is about an item or a proposal that exists.
+INSERT INTO core.queue (worker, lane, item_id) VALUES ('sextant', 'normal', 'PA-0999');
+ERROR:  insert or update on table "queue" violates foreign key constraint "queue_item_id_fkey"
+INSERT INTO core.queue (worker, lane, proposal_id) VALUES ('bellbuoy', 'urgent', 999);
+ERROR:  insert or update on table "queue" violates foreign key constraint "queue_proposal_id_fkey"

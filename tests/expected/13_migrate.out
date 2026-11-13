@@ -1,0 +1,95 @@
+
+== A new database: every migration is applied, in order.
+applied 0001_schemas_and_roles
+applied 0002_refusals
+applied 0003_working_tables
+applied 0004_ledger
+applied 0005_public_views
+applied 0006_privileges
+applied 0007_integrity_checks
+exit status 0
+
+== Run again: there is nothing to apply.
+nothing to apply
+exit status 0
+
+== What the database remembers: each version, and that it holds a checksum.
+0001_schemas_and_roles  true
+0002_refusals  true
+0003_working_tables  true
+0004_ledger  true
+0005_public_views  true
+0006_privileges  true
+0007_integrity_checks  true
+
+== The recorded checksum of the first migration is the SHA-256 of its file.
+same
+
+== A later migration is added: only that one is applied.
+applied 0900_sample_addition
+exit status 0
+
+== An applied migration has changed, if only by one blank line: refused.
+E_PARSE: migration 0003_working_tables has changed since it was applied
+exit status 1
+
+== An applied migration is missing from this copy: refused.
+E_NEEDS_SUBTOOL: the database holds migration 0900_sample_addition, which this copy of Logbook does not have
+exit status 1
+
+== A migration turns up that sorts before one already applied: refused.
+E_PARSE: migration 0800_sample_latecomer was not applied, and the later migration 0900_sample_addition was
+exit status 1
+
+== A file that is not named like a migration: refused.
+E_PARSE: the migrations directory holds a file that is not named like 0001_some_name.sql
+exit status 1
+
+== A migration with a badly formed name: refused.
+E_PARSE: the migrations directory holds a file that is not named like 0001_some_name.sql
+exit status 1
+
+== A migration that fails part-way: refused, and nothing from it is kept.
+E_PARSE: migration 0901_sample_half_done was not applied, and nothing from it was kept: division by zero
+exit status 1
+table from the failed migration exists: f
+failed migration is recorded: f
+
+== With the bad files gone, there is nothing to apply.
+nothing to apply
+exit status 0
+
+== An empty migrations directory: refused.
+E_PARSE: the migrations directory is empty
+exit status 1
+
+== A migrations directory that is not there: refused.
+E_PARSE: the migrations directory cannot be read
+exit status 1
+
+== The database does not answer: refused, without naming where it was looked for.
+E_TIMEOUT: the database did not answer
+exit status 1
+
+== The server is not PostgreSQL 17: refused.
+E_NEEDS_SUBTOOL: these migrations are written for PostgreSQL 17 and the server is another version
+exit status 1
+
+== pub_ro already exists and may create databases: refused, and nothing is applied.
+E_NEEDS_SUBTOOL: role pub_ro already exists with powers Logbook does not give it
+exit status 1
+schema core exists in that database: f
+
+== pub_ro already exists and has been made a member of muster: refused.
+E_NEEDS_SUBTOOL: role pub_ro already exists with powers Logbook does not give it
+exit status 1
+
+== With pub_ro as Logbook expects it, the same database is migrated.
+applied 0001_schemas_and_roles
+applied 0002_refusals
+applied 0003_working_tables
+applied 0004_ledger
+applied 0005_public_views
+applied 0006_privileges
+applied 0007_integrity_checks
+exit status 0

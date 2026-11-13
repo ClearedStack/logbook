@@ -1,0 +1,32 @@
+== The dump is taken at a single moment, and loads into a new database without an error.
+pg_dump exit status 0
+restore exit status 0
+
+== The restored copy passes every integrity check.
+15 checks, 0 failures
+
+== It holds the same rows as the original.
+items 5, evaluations 4, decisions 2, proposals 3, queued 5, pauses 2, ledger entries 33, drills 3, migrations 7
+
+== The next item continues the numbering.
+PA-0006
+
+== The checks on writing came back with it.
+ERROR:  E_NEEDS_SUBTOOL: state is a name Logbook has no rule for
+ERROR:  the ledger is append-only: an entry is never changed or removed
+
+== pub_ro still reads the public views and nothing else.
+6
+ERROR:  permission denied for schema core at character 22
+working tables pub_ro can touch: 0
+functions in core pub_ro can call: 0
+public views pub_ro cannot read: 0
+
+== Muster still cannot change the ledger or read the public views.
+ERROR:  permission denied for table ledger
+ERROR:  permission denied for schema pub at character 22
+
+== What a dump of one database does not carry: who may connect to it.
+== Whoever restores Logbook for real must apply this again. The migrations do it for a new database.
+anyone may connect to the restored copy: true
+pub_ro may create temporary tables in it: true

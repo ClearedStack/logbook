@@ -84,6 +84,7 @@ Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the i
 | `14_dump_and_restore` | A dump restored into a new database passes the integrity checks and keeps both roles fenced |
 | `15_cluster_lists_every_migration` | Every migration is named in `kustomization.yaml`, so the cluster is handed each one |
 | `16_item_id_width` | An item identifier of 4 to 9 digits is accepted, and a shorter, longer or lower-case one is refused |
+| `17_item_numbering` | Logbook gives out identifiers past `PA-9999`, each number has one form, and `muster` cannot supply an identifier |
 
 After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new output, and read the difference before committing it.
 
@@ -136,7 +137,7 @@ These are in `SPEC.md` and are not built here.
 Three things to know before relying on it:
 
 - **Restoring a dump does not restore who may connect.** A dump of one database does not carry the database’s own privileges. After a restore, anyone with a login on the server can connect until this is applied again: `REVOKE ALL ON DATABASE ... FROM PUBLIC` and `GRANT CONNECT ON DATABASE ... TO muster, pub_ro`. The saved example `14_dump_and_restore` shows it.
-- **Identifiers can have gaps.** A refused insert still uses up its number. The numbers Logbook gives out itself stop at `PA-9999`. An identifier may have up to 9 digits, and one past `PA-9999` has to be supplied by whoever inserts the row.
+- **Identifiers can have gaps.** A refused insert still uses up its number. Logbook gives out every identifier: `PA-0001` to `PA-9999`, then `PA-10000` and on to `PA-999999999`. Muster cannot supply one, or set the time an item was recorded.
 - **Logbook does not decide which move between states is allowed.** It checks that both ends of a move are states it knows. Muster is the gatekeeper.
 
 ## Names

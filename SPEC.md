@@ -74,7 +74,7 @@ Both roles are created without a password and unable to log in. Whoever deploys 
 
 | Table | Holds | Muster may |
 | --- | --- | --- |
-| `core.item` | One row for each item: an identifier of `PA-` and 4 to 9 digits, state, title, the cleaned address it was found at and the SHA-256 of that address | Add. Change the state, title and address. Never remove, never change the identifier |
+| `core.item` | One row for each item: an identifier such as `PA-0001` or `PA-10000`, state, title, the cleaned address it was found at and the SHA-256 of that address | Add, giving the state, title and address. Logbook gives out the identifier and sets the time it was recorded. Change the state, title and address. Never remove, never choose or change the identifier |
 | `core.evaluation` | One row each time an item is screened and scored: the result of each gate, the rating and weight of each factor, the score, the recommendation | Add only |
 | `core.decision` | The decision trail: what the owner chose for an evaluation, and why | Add only |
 | `core.edit_proposal` | One row for each proposal that passed the automatic checks: the element, the owning repository, the kind, the text, the status | Add. Change the status. Never change the text, never remove |
@@ -124,7 +124,7 @@ Names that are listed somewhere else are checked for their form only: a worker o
 | --- | --- |
 | A required value is missing, or is not in the form it must have | `E_PARSE` |
 | A value is well-formed and not in a fixed list | `E_NEEDS_SUBTOOL` |
-| An item identifier is not `PA-` followed by 4 to 9 digits | `E_PARSE` |
+| An item identifier is not `PA-` followed by four digits, or by five to nine digits that do not start with 0 | `E_PARSE` |
 | An evaluation’s score is not the sum of each rating times its weight, a rating is not a whole number from 1 to 5, or a failed gate has no reason | `E_PARSE` |
 | An evaluation that failed a gate also carries factors, a score or a recommendation | `E_PARSE` |
 | A decision differs from the recommendation and has no written reason | `E_PARSE` |
@@ -145,8 +145,7 @@ Logbook does not decide which move between states is allowed. Muster is the gate
 | Question | What was built in the meantime |
 | --- | --- |
 | The platform pages write one state two ways, `screened_out` and `screened-out` | `screened_out`. The hyphenated form is refused |
-| An identifier may have 4 to 9 digits, and the numbers Logbook gives out itself stop at `PA-9999` | An identifier past `PA-9999` has to be supplied by whoever inserts the row. The column default and its sequence are unchanged |
-| `PA-0001` and `PA-00001` are both well-formed | Logbook accepts both and treats them as two different items |
+| The shared contract allows 4 to 9 digits and does not say whether leading zeros matter | Each number has one form: four digits up to `PA-9999`, then no leading zero, up to `PA-999999999`. `PA-00001` is refused. Logbook gives out every identifier, and Muster cannot supply one |
 | An item is said to have an identifier in every state, and also to be given one only when it moves from `discovered` to `recorded` | Every row has an identifier, and every one of the fourteen states is accepted |
 | Only Muster and Conn may connect, but a backup needs a dump and a drill needs its result written | No third role. A drill’s result is written by Muster. A dump has to be taken by the owner of the database from inside Logbook’s own pod |
 | The memory figure is called a request here and a limit in the build prompt | The tests run within a limit of 256 MiB |

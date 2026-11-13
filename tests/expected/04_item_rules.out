@@ -1,4 +1,4 @@
--- Rules for an item: an identifier of PA- and 4 to 9 digits, one of the fourteen
+-- Rules for an item: an identifier such as PA-0001 or PA-10000, one of the fourteen
 -- states, a title, and an address no other item has.
 -- The fourteen states, each accepted.
 BEGIN;
@@ -28,6 +28,8 @@ ROLLBACK;
 INSERT INTO core.item (item_id, state, title) VALUES ('PA-12', 'recorded', 'Sample');
 ERROR:  E_PARSE: item_id must look like PA-0001
 INSERT INTO core.item (item_id, state, title) VALUES ('PA-1234567890', 'recorded', 'Sample');
+ERROR:  E_PARSE: item_id must look like PA-0001
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-00012', 'recorded', 'Sample');
 ERROR:  E_PARSE: item_id must look like PA-0001
 INSERT INTO core.item (item_id, state, title) VALUES ('pa-0012', 'recorded', 'Sample');
 ERROR:  E_PARSE: item_id must look like PA-0001
@@ -91,19 +93,19 @@ SELECT count(*) AS items FROM core.item;
 (1 row)
 
 -- A refused or abandoned insert still uses up its number, so identifiers can
--- have gaps. The numbers Logbook gives out itself stop at PA-9999: it refuses
--- to go past that, and does not invent a longer identifier.
-SELECT setval('core.item_number', 9998);
- setval 
---------
-   9998
+-- have gaps. They stop at PA-999999999: Logbook refuses to go past that, and
+-- does not invent a longer identifier.
+SELECT setval('core.item_number', 999999998);
+  setval   
+-----------
+ 999999998
 (1 row)
 
 INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample last item') RETURNING item_id;
- item_id 
----------
- PA-9999
+   item_id    
+--------------
+ PA-999999999
 (1 row)
 
 INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item too many');
-ERROR:  nextval: reached maximum value of sequence "item_number" (9999)
+ERROR:  nextval: reached maximum value of sequence "item_number" (999999999)

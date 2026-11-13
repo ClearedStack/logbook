@@ -1,6 +1,6 @@
 \i fixtures/sample_record.sql
 \set ECHO all
--- Rules for an item: an identifier of PA- and 4 to 9 digits, one of the fourteen
+-- Rules for an item: an identifier such as PA-0001 or PA-10000, one of the fourteen
 -- states, a title, and an address no other item has.
 
 -- The fourteen states, each accepted.
@@ -13,6 +13,7 @@ ROLLBACK;
 -- A broken identifier is refused: E_PARSE.
 INSERT INTO core.item (item_id, state, title) VALUES ('PA-12', 'recorded', 'Sample');
 INSERT INTO core.item (item_id, state, title) VALUES ('PA-1234567890', 'recorded', 'Sample');
+INSERT INTO core.item (item_id, state, title) VALUES ('PA-00012', 'recorded', 'Sample');
 INSERT INTO core.item (item_id, state, title) VALUES ('pa-0012', 'recorded', 'Sample');
 INSERT INTO core.item (item_id, state, title) VALUES ('PA-001X', 'recorded', 'Sample');
 INSERT INTO core.item (item_id, state, title) VALUES (NULL, 'recorded', 'Sample');
@@ -51,8 +52,8 @@ VALUES ('discovered', 'Sample page-count planner, seen again', 'https://tools.ex
 SELECT count(*) AS items FROM core.item;
 
 -- A refused or abandoned insert still uses up its number, so identifiers can
--- have gaps. The numbers Logbook gives out itself stop at PA-9999: it refuses
--- to go past that, and does not invent a longer identifier.
-SELECT setval('core.item_number', 9998);
+-- have gaps. They stop at PA-999999999: Logbook refuses to go past that, and
+-- does not invent a longer identifier.
+SELECT setval('core.item_number', 999999998);
 INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample last item') RETURNING item_id;
 INSERT INTO core.item (state, title) VALUES ('discovered', 'Sample item too many');

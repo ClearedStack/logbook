@@ -28,8 +28,8 @@ SELECT count(*) AS queued_for_countersign FROM core.queue WHERE worker = 'counte
 (1 row)
 
 -- A new item is given the next identifier.
-INSERT INTO core.item (state, title, recorded_at)
-VALUES ('discovered', 'Sample date counter', '2026-01-12 10:00+00')
+INSERT INTO core.item (state, title)
+VALUES ('discovered', 'Sample date counter')
 RETURNING item_id;
  item_id 
 ---------
@@ -118,7 +118,7 @@ ORDER BY 1, 2;
  core   | decision      | SELECT, INSERT
  core   | edit_proposal | SELECT, INSERT
  core   | evaluation    | SELECT, INSERT
- core   | item          | SELECT, INSERT
+ core   | item          | SELECT
  core   | ledger        | SELECT, INSERT
  core   | migration     | SELECT
  core   | pause         | SELECT, INSERT
@@ -144,7 +144,8 @@ ORDER BY 1;
  queue         | attempt, lease_token, leased_until, heartbeat_at
 (4 rows)
 
--- Columns Muster may insert, read or reference without holding that on the whole table: none.
+-- Columns Muster may insert without holding INSERT on the whole table, and
+-- columns it may read or reference without holding that on the whole table.
 SELECT c.relname, a.attname
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -156,7 +157,10 @@ WHERE n.nspname IN ('core', 'pub', 'public') AND c.relkind IN ('r', 'p', 'v', 'm
 ORDER BY 1, 2;
  relname | attname 
 ---------+---------
-(0 rows)
+ item    | address
+ item    | state
+ item    | title
+(3 rows)
 
 -- Functions in core that Muster cannot call: the integrity check and its two helpers.
 SELECT p.oid::regprocedure AS not_callable

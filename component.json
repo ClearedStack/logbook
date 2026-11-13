@@ -1,0 +1,18 @@
+{
+  "slug": "logbook",
+  "name": "Logbook",
+  "formerly": "postgres",
+  "kind": "control-plane",
+  "namespace": "clearedstack",
+  "responsibility": "Keeps the record of every item, decision and proposal, and the public views of that record.",
+  "interfaces": [
+    "Working records (the core schema): read and written by Muster only",
+    "Public views (the pub schema): read-only, for Conn"
+  ],
+  "repository": "clearedstack.com",
+  "image": "postgres:17-alpine (upstream PostgreSQL; Logbook is the schema and ledger on top)",
+  "dependsOn": [],
+  "memory": "256 MiB",
+  "version": "17-alpine",
+  "subTools": []
+}

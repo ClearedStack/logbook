@@ -1,0 +1,13 @@
+== writes through the public views are refused
+psql:04_pub_ro_cannot_write.sql:4: ERROR:  42501
+psql:04_pub_ro_cannot_write.sql:5: ERROR:  42501
+psql:04_pub_ro_cannot_write.sql:6: ERROR:  42501
+psql:04_pub_ro_cannot_write.sql:7: ERROR:  42501
+== creating objects is refused
+psql:04_pub_ro_cannot_write.sql:9: ERROR:  42501
+psql:04_pub_ro_cannot_write.sql:10: ERROR:  42501
+psql:04_pub_ro_cannot_write.sql:11: ERROR:  42501
+== nothing changed
+item_id | title
+PA-0001 | Lighthouse keeper rota
+PA-0002 | Unpublished kite survey

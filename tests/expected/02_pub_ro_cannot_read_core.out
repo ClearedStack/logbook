@@ -1,0 +1,26 @@
+== the role, and that it is not a superuser and cannot log in
+rolname | rolsuper | rolcanlogin | rolcreaterole | rolcreatedb | rolbypassrls
+pub_ro | f | f | f | f | f
+== roles pub_ro is a member of (there must be none)
+rolname
+== pub_ro on schema core: usage, create
+has_schema_privilege | has_schema_privilege
+f | f
+== core tables on which pub_ro holds any privilege at all (there must be none)
+relname
+== acting as pub_ro: every read of a working table is refused
+current_user
+pub_ro
+psql:02_pub_ro_cannot_read_core.sql:31: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:32: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:33: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:34: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:35: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:36: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:37: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:38: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:39: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:40: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:41: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:42: ERROR:  42501
+psql:02_pub_ro_cannot_read_core.sql:43: ERROR:  42501

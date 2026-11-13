@@ -1,0 +1,19 @@
+== item ids must look like PA-0000
+psql:05_core_constraints.sql:4: ERROR:  23514
+psql:05_core_constraints.sql:5: ERROR:  23514
+psql:05_core_constraints.sql:6: ERROR:  23514
+== a new item is not published unless someone says so
+published
+f
+== records must belong to an item that exists
+psql:05_core_constraints.sql:12: ERROR:  23503
+psql:05_core_constraints.sql:13: ERROR:  23503
+psql:05_core_constraints.sql:14: ERROR:  23503
+== a proposal status is pending, approved or rejected, and decided ones carry a time
+psql:05_core_constraints.sql:16: ERROR:  23514
+psql:05_core_constraints.sql:17: ERROR:  23514
+psql:05_core_constraints.sql:18: ERROR:  23502
+== a lease has a token and an expiry, or neither
+psql:05_core_constraints.sql:21: ERROR:  23514
+== a drill cannot finish before it starts
+psql:05_core_constraints.sql:23: ERROR:  23514

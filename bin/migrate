@@ -1,0 +1,50 @@
+#!/bin/sh
+# Apply the Logbook migrations, in filename order, to the database named by
+# the usual PostgreSQL environment variables (PGHOST, PGPORT, PGUSER,
+# PGDATABASE, ...). Each file runs in one transaction together with its
+# entry in core.migration, so a file is either fully applied or not at all.
+#
+# Stops, without changing anything further, if:
+#   - a file that was already applied has changed since,
+#   - the database records a migration this directory does not have,
+#   - a file is not named NNNN_name.sql.
+set -eu
+
+dir=$(CDPATH= cd -- "$(dirname -- "$0")/../migrations" && pwd)
+q() { psql -X -q -A -t -v ON_ERROR_STOP=1 "$@"; }
+stop() { echo "migrate: stopped: $1" >&2; exit 1; }
+
+have_record=$(q -c "SELECT to_regclass('core.migration') IS NOT NULL")
+
+if [ "$have_record" = t ]; then
+    for name in $(q -c "SELECT filename FROM core.migration ORDER BY filename"); do
+        [ -f "$dir/$name" ] || stop "$name is recorded as applied but is not in migrations/"
+    done
+fi
+
+for path in "$dir"/*; do
+    name=$(basename -- "$path")
+    case $name in
+        *[!a-z0-9_.]*) stop "$name is not named NNNN_name.sql" ;;
+    esac
+    case $name in
+        [0-9][0-9][0-9][0-9]_*.sql) ;;
+        *) stop "$name is not named NNNN_name.sql" ;;
+    esac
+    sum=$(sha256sum < "$path" | cut -d' ' -f1)
+    recorded=
+    if [ "$have_record" = t ]; then
+        recorded=$(q -v name="$name" <<'SQL'
+SELECT sha256 FROM core.migration WHERE filename = :'name'
+SQL
+)
+    fi
+    if [ -n "$recorded" ]; then
+        [ "$recorded" = "$sum" ] || stop "$name has changed since it was applied"
+        continue
+    fi
+    printf '%s\n' "INSERT INTO core.migration (filename, sha256) VALUES ('$name', '$sum');" |
+        q -1 -f "$path" -f - || stop "$name failed and was rolled back"
+    have_record=t
+    echo "applied $name"
+done

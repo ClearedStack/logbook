@@ -1,0 +1,16 @@
+== pub.item
+item_id | title | summary | state | updated_at
+PA-0001 | Lighthouse keeper rota | A made-up published item. | built | 2001-01-05 09:00:00+00
+== pub.evaluation
+item_id | outcome | evaluated_at
+PA-0001 | pass | 2001-01-02 09:00:00+00
+== pub.decision
+item_id | decision | decided_at
+PA-0001 | accept | 2001-01-03 09:00:00+00
+== pub.edit_proposal
+item_id | payload | decided_at
+PA-0001 | {"summary": "approved made-up edit"} | 2001-01-05 09:00:00+00
+== pub.restore_drill
+drill_id | finished_at | check_name | passed | checked_at
+1 | 2001-03-01 02:30:00+00 | example_check_a | t | 2001-03-01 02:10:00+00
+1 | 2001-03-01 02:30:00+00 | example_check_b | f | 2001-03-01 02:20:00+00

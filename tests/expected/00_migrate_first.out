@@ -1,0 +1,4 @@
+applied 0001_schemas.sql
+applied 0002_core_tables.sql
+applied 0003_pub_views.sql
+applied 0004_pub_ro_role.sql

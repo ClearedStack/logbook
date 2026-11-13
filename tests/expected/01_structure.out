@@ -1,0 +1,30 @@
+== tables in core
+table_name
+decision
+edit_proposal
+evaluation
+item
+ledger
+migration
+queue_lease
+restore_drill
+restore_drill_check
+== base tables in pub (there must be none)
+table_name
+== views in pub and their columns
+table_name | string_agg
+decision | item_id,decision,decided_at
+edit_proposal | item_id,payload,decided_at
+evaluation | item_id,outcome,evaluated_at
+item | item_id,title,summary,state,updated_at
+restore_drill | drill_id,finished_at,check_name,passed,checked_at
+== views in core (there must be none)
+table_name
+== pub views that are not security_barrier (there must be none)
+relname
+== migrations recorded
+filename
+0001_schemas.sql
+0002_core_tables.sql
+0003_pub_views.sql
+0004_pub_ro_role.sql

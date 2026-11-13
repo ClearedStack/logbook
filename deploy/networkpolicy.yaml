@@ -1,0 +1,66 @@
+# Nothing in the namespace may send or receive anything unless a policy says so.
+# Every pod in clearedstack is covered, not only Logbook, so each other workload
+# here has to bring its own allow rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: clearedstack
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Who may reach the database. Today that is the migrate Job only. Muster and
+# Conn are added here when they are deployed. Nothing else is, and Logbook
+# itself may call nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logbook-ingress
+  namespace: clearedstack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: logbook
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: logbook-migrate
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# The migrate Job may look up Logbook's name and connect to it. Nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logbook-migrate-egress
+  namespace: clearedstack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: logbook-migrate
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: logbook
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

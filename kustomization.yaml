@@ -1,0 +1,39 @@
+# What Argo CD applies to the cluster: the manifests in deploy/, plus the
+# migration runner and the migrations themselves as two ConfigMaps for the
+# migrate Job to mount.
+#
+# This file is at the top of the repository because kustomize will not read a
+# file above the directory its kustomization.yaml is in.
+#
+# ponytail: kustomize has no wildcard for files, so a new migration needs a new
+# line here. The saved example 15_cluster_lists_every_migration fails if one is
+# missing.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deploy/namespace.yaml
+  - deploy/networkpolicy.yaml
+  - deploy/logbook.yaml
+  - deploy/migrate-job.yaml
+
+# Fixed names: the Job is an Argo CD hook that is made again on every sync, so
+# it always mounts the ConfigMaps as they are now.
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: logbook-migrate
+    namespace: clearedstack
+    files:
+      - migrate.sh
+  - name: logbook-migrations
+    namespace: clearedstack
+    files:
+      - migrations/0001_schemas_and_roles.sql
+      - migrations/0002_refusals.sql
+      - migrations/0003_working_tables.sql
+      - migrations/0004_ledger.sql
+      - migrations/0005_public_views.sql
+      - migrations/0006_privileges.sql
+      - migrations/0007_integrity_checks.sql

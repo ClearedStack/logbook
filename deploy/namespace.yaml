@@ -1,0 +1,8 @@
+# The control-plane namespace. The label stops the namespace, and with it the
+# volume that holds the record, from being deleted by accident.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clearedstack
+  labels:
+    holm.chat/protected: "true"

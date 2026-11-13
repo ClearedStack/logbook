@@ -1,0 +1,102 @@
+# Applies the migrations, then lets Muster log in.
+#
+# An Argo CD hook: it runs after each sync, once the database is ready, and the
+# Job from the sync before is removed first. migrate.sh applies each migration
+# once, so a run with nothing new prints "nothing to apply".
+#
+# pub_ro is left unable to log in until Conn is deployed.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: logbook-migrate
+  namespace: clearedstack
+  labels:
+    app.kubernetes.io/name: logbook-migrate
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: logbook-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: ["arm64"]
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: ["cm3588-plus"]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: docker.io/library/postgres:17@sha256:846a7ddaa67a4b354ae1d21087b683901aa6113a4ed626d3787cfbf6c85e3e07
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              sh /logbook/bin/migrate.sh
+              # The password is read from the environment by psql itself, so it
+              # is never on a command line.
+              psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
+              \getenv muster_password MUSTER_PASSWORD
+              ALTER ROLE muster LOGIN PASSWORD :'muster_password';
+              SQL
+              echo 'muster may log in'
+          env:
+            - name: PGHOST
+              value: logbook
+            - name: PGDATABASE
+              value: logbook
+            - name: PGUSER
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: logbook-credentials
+                  key: postgres-password
+            - name: MUSTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: logbook-credentials
+                  key: muster-password
+            - name: LOGBOOK_MIGRATIONS
+              value: /logbook/migrations
+          resources:
+            requests:
+              cpu: 20m
+              memory: 256Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: migrate
+              mountPath: /logbook/bin
+              readOnly: true
+            - name: migrations
+              mountPath: /logbook/migrations
+              readOnly: true
+      volumes:
+        - name: migrate
+          configMap:
+            name: logbook-migrate
+        - name: migrations
+          configMap:
+            name: logbook-migrations

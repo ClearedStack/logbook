@@ -244,15 +244,27 @@ func TestDeployManifests(t *testing.T) {
 	requireContains(t, "deploy/namespace.yaml", ns, "kind: Namespace", "name: clearedstack")
 
 	pc := mustRead(t, "deploy/priorityclass.yaml")
-	requireContains(t, "deploy/priorityclass.yaml", pc,
+	pcDocs := strings.Split(pc, "\n---\n")
+	if len(pcDocs) != 2 {
+		t.Fatalf("deploy/priorityclass.yaml has %d documents, want 2", len(pcDocs))
+	}
+	requireContains(t, "priorityclass[high]", pcDocs[0],
 		"kind: PriorityClass",
 		"name: clearedstack-high",
+		"value: 100000",
+		"globalDefault: false",
+	)
+	requireContains(t, "priorityclass[low]", pcDocs[1],
+		"kind: PriorityClass",
+		"name: cs-build-low",
+		"value: -1000",
+		"preemptionPolicy: Never",
 		"globalDefault: false",
 	)
 
 	// Every container image across deploy/*.yaml must be pinned by sha256 digest.
 	imageLine := regexp.MustCompile(`(?m)^\s*image:\s*(\S+)\s*$`)
-	pinnedDigest := regexp.MustCompile(`^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$`)
+	pinnedDigest := regexp.MustCompile(`^[a-z0-9./_-]+(:[0-9]+/[a-z0-9._/-]+|:[A-Za-z0-9._-]+)@sha256:[0-9a-f]{64}$`)
 	var imageCount int
 	for _, f := range deployFiles {
 		text := mustRead(t, f)
@@ -263,12 +275,12 @@ func TestDeployManifests(t *testing.T) {
 			}
 		}
 	}
-	if imageCount < 2 {
-		t.Errorf("found %d container images in deploy/, want at least 2", imageCount)
+	if imageCount < 6 {
+		t.Errorf("found %d container images in deploy/, want at least 6", imageCount)
 	}
 
-	// Workload security, node affinity and resource checks on both logbook and logbook-migrate.
-	for _, f := range []string{"deploy/logbook.yaml", "deploy/migrate-job.yaml"} {
+	// Workload security, node affinity and resource checks across all workloads.
+	for _, f := range []string{"deploy/logbook.yaml", "deploy/migrate-job.yaml", "deploy/backup-cronjob.yaml"} {
 		text := mustRead(t, f)
 		requireContains(t, f, text,
 			"namespace: clearedstack",
@@ -295,6 +307,36 @@ func TestDeployManifests(t *testing.T) {
 		checkSmallResources(t, f, text)
 	}
 
+	// CronJob-specific checks: key separation and in-memory SQL handoff.
+	cronRaw := mustRead(t, "deploy/backup-cronjob.yaml")
+	cronDocs := strings.Split(cronRaw, "\n---\n")
+	if len(cronDocs) != 2 {
+		t.Fatalf("deploy/backup-cronjob.yaml has %d documents, want 2", len(cronDocs))
+	}
+	requireContains(t, "cronjob[logbook-backup]", cronDocs[0],
+		"kind: CronJob",
+		"name: logbook-backup",
+		`schedule: "0 2 * * *"`,
+		"priorityClassName: cs-build-low",
+		"/logbook/bin/dump.sh",
+		"medium: Memory",
+		"name: logbook-backup-config",
+		"secretName: logbook-backup-dest",
+	)
+	if strings.Contains(stripYAMLComments(cronDocs[0]), "logbook-drill-key") {
+		t.Error("logbook-backup must not mount the decryption Secret logbook-drill-key")
+	}
+	requireContains(t, "cronjob[logbook-restore-drill]", cronDocs[1],
+		"kind: CronJob",
+		"name: logbook-restore-drill",
+		`schedule: "30 3 1 * *"`,
+		"priorityClassName: cs-build-low",
+		"/logbook/bin/restore-drill.sh",
+		"medium: Memory",
+		"secretName: logbook-backup-dest",
+		"secretName: logbook-drill-key",
+	)
+
 	// StatefulSet-specific checks.
 	stateful := mustRead(t, "deploy/logbook.yaml")
 	requireContains(t, "deploy/logbook.yaml", stateful,
@@ -310,12 +352,12 @@ func TestDeployManifests(t *testing.T) {
 		"name: logbook-migrate",
 	)
 
-	// NetworkPolicy checks: default-deny, logbook-ingress (only migrate, muster, conn on TCP 5432, egress []),
-	// and logbook-migrate-egress (ingress [], egress only to logbook:5432 and kube-system DNS).
+	// NetworkPolicy checks: default-deny, logbook-ingress, logbook-migrate-egress,
+	// logbook-backup-egress, and logbook-restore-drill-egress.
 	netpol := mustRead(t, "deploy/networkpolicy.yaml")
 	docs := strings.Split(netpol, "\n---\n")
-	if len(docs) != 3 {
-		t.Fatalf("deploy/networkpolicy.yaml has %d documents, want 3", len(docs))
+	if len(docs) != 5 {
+		t.Fatalf("deploy/networkpolicy.yaml has %d documents, want 5", len(docs))
 	}
 
 	requireContains(t, "networkpolicy[default-deny]", docs[0],
@@ -336,6 +378,7 @@ func TestDeployManifests(t *testing.T) {
 		"- Ingress",
 		"- Egress",
 		"- logbook-migrate",
+		"- logbook-backup",
 		"- muster",
 		"- conn",
 		"protocol: TCP",
@@ -345,6 +388,9 @@ func TestDeployManifests(t *testing.T) {
 	ingressBody := stripYAMLComments(docs[1])
 	if strings.Contains(ingressBody, "namespaceSelector") || strings.Contains(ingressBody, "cs-workers") {
 		t.Error("logbook-ingress must not open Logbook to namespaces outside clearedstack")
+	}
+	if strings.Contains(ingressBody, "logbook-restore-drill") {
+		t.Error("logbook-ingress must not allow logbook-restore-drill to reach the live database")
 	}
 
 	requireContains(t, "networkpolicy[logbook-migrate-egress]", docs[2],
@@ -358,6 +404,40 @@ func TestDeployManifests(t *testing.T) {
 		"kubernetes.io/metadata.name: kube-system",
 		"port: 53",
 	)
+
+	requireContains(t, "networkpolicy[logbook-backup-egress]", docs[3],
+		"name: logbook-backup-egress",
+		"namespace: clearedstack",
+		"app.kubernetes.io/name: logbook-backup",
+		"ingress: []",
+		"app.kubernetes.io/name: logbook",
+		"port: 5432",
+		"kubernetes.io/metadata.name: kube-system",
+		"port: 443",
+		"- 10.0.0.0/8",
+		"- 172.16.0.0/12",
+		"- 192.168.0.0/16",
+		"- 169.254.0.0/16",
+		"- 100.64.0.0/10",
+	)
+
+	requireContains(t, "networkpolicy[logbook-restore-drill-egress]", docs[4],
+		"name: logbook-restore-drill-egress",
+		"namespace: clearedstack",
+		"app.kubernetes.io/name: logbook-restore-drill",
+		"ingress: []",
+		"kubernetes.io/metadata.name: kube-system",
+		"port: 443",
+		"- 10.0.0.0/8",
+		"- 172.16.0.0/12",
+		"- 192.168.0.0/16",
+		"- 169.254.0.0/16",
+		"- 100.64.0.0/10",
+	)
+	drillNetBody := stripYAMLComments(docs[4])
+	if strings.Contains(drillNetBody, "5432") {
+		t.Error("logbook-restore-drill-egress must not allow connections to TCP 5432")
+	}
 }
 
 func checkSmallResources(t *testing.T, file, text string) {

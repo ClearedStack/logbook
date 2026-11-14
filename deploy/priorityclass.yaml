@@ -3,7 +3,21 @@ apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
   name: clearedstack-high
+  labels:
+    app.kubernetes.io/part-of: clearedstack
 value: 100000
 globalDefault: false
 preemptionPolicy: PreemptLowerPriority
 description: "Control-plane services in clearedstack protected from eviction."
+---
+# Background maintenance and build Jobs yield first when node memory is short.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: cs-build-low
+  labels:
+    app.kubernetes.io/part-of: clearedstack
+value: -1000
+globalDefault: false
+preemptionPolicy: Never
+description: "Low priority for ephemeral build, backup and restore-drill Jobs."

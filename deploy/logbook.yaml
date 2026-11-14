@@ -134,6 +134,9 @@ spec:
               mountPath: /var/run/postgresql
             - name: tmp
               mountPath: /tmp
+            - name: scripts
+              mountPath: /logbook/bin
+              readOnly: true
       volumes:
         - name: run
           emptyDir:
@@ -141,6 +144,9 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 16Mi
+        - name: scripts
+          configMap:
+            name: logbook-migrate
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -28,6 +28,8 @@ configMapGenerator:
     namespace: clearedstack
     files:
       - migrate.sh
+      - dump.sh
+      - restore-drill.sh
   - name: logbook-migrations
     namespace: clearedstack
     files:

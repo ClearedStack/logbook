@@ -12,9 +12,8 @@ spec:
     - Ingress
     - Egress
 ---
-# Who may reach the database. Today that is the migrate Job only. Muster and
-# Conn are added here when they are deployed. Nothing else is, and Logbook
-# itself may call nothing.
+# Who may reach the database: the migrate Job and Muster. Conn is added here
+# when it is deployed. Nothing else is, and Logbook itself may call nothing.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -31,6 +30,9 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: logbook-migrate
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: muster
       ports:
         - protocol: TCP
           port: 5432

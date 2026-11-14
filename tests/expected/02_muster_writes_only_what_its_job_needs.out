@@ -113,18 +113,22 @@ WHERE n.nspname IN ('core', 'pub', 'public') AND c.relkind IN ('r', 'p', 'v', 'm
   AND has_table_privilege('muster', c.oid, p.privilege)
 GROUP BY 1, 2
 ORDER BY 1, 2;
- schema |     name      |      whole_table       
---------+---------------+------------------------
- core   | decision      | SELECT, INSERT
- core   | edit_proposal | SELECT, INSERT
- core   | evaluation    | SELECT, INSERT
- core   | item          | SELECT
- core   | ledger        | SELECT, INSERT
- core   | migration     | SELECT
- core   | pause         | SELECT, INSERT
- core   | queue         | SELECT, INSERT, DELETE
- core   | restore_drill | SELECT, INSERT
-(9 rows)
+ schema |       name       |      whole_table       
+--------+------------------+------------------------
+ core   | component_health | SELECT, INSERT
+ core   | decision         | SELECT, INSERT
+ core   | edit_proposal    | SELECT, INSERT
+ core   | evaluation       | SELECT, INSERT
+ core   | item             | SELECT
+ core   | lease_outcome    | SELECT, INSERT, DELETE
+ core   | ledger           | SELECT, INSERT
+ core   | migration        | SELECT
+ core   | pause            | SELECT, INSERT
+ core   | queue            | SELECT, INSERT, DELETE
+ core   | restore_drill    | SELECT, INSERT
+ core   | result           | SELECT, INSERT
+ core   | submission_count | SELECT, INSERT, DELETE
+(13 rows)
 
 -- Every column Muster may update without holding UPDATE on the whole table.
 SELECT c.relname AS name, string_agg(a.attname, ', ' ORDER BY a.attnum) AS columns_it_may_update
@@ -136,13 +140,17 @@ WHERE n.nspname IN ('core', 'pub', 'public') AND c.relkind IN ('r', 'p', 'v', 'm
   AND has_column_privilege('muster', c.oid, a.attnum, 'UPDATE')
 GROUP BY 1
 ORDER BY 1;
-     name      |              columns_it_may_update               
----------------+--------------------------------------------------
- edit_proposal | status, decided_at
- item          | state, title, address
- pause         | replayed_at
- queue         | attempt, lease_token, leased_until, heartbeat_at
-(4 rows)
+       name       |                             columns_it_may_update                              
+------------------+--------------------------------------------------------------------------------
+ component_health | state, error_code, digest, reported_at
+ edit_proposal    | status, decided_at
+ item             | state, title, address, source
+ lease_outcome    | lease, worker, call_name, call_arg, ack_state, ack_next, ack_held, recorded_at
+ pause            | replayed_at
+ queue            | attempt, lease_token, leased_until, heartbeat_at, held
+ result           | payload, recorded_at
+ submission_count | submissions
+(8 rows)
 
 -- Columns Muster may insert without holding INSERT on the whole table, and
 -- columns it may read or reference without holding that on the whole table.
@@ -158,9 +166,10 @@ ORDER BY 1, 2;
  relname | attname 
 ---------+---------
  item    | address
+ item    | source
  item    | state
  item    | title
-(3 rows)
+(4 rows)
 
 -- Functions in core that Muster cannot call: the integrity check and its two helpers.
 SELECT p.oid::regprocedure AS not_callable

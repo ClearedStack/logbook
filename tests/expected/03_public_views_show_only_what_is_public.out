@@ -8,6 +8,7 @@ GROUP BY 1
 ORDER BY 1;
        view        |                                            columns                                             
 -------------------+------------------------------------------------------------------------------------------------
+ component_health  | component, state, error_code, reported_at
  decision          | decision_id, item_id, evaluation_id, recommendation, outcome, overridden, reason, decided_at
  edit_proposal     | proposal_id, element_id, owner_repo, edit_class, status, payload, submitted_at, decided_at
  evaluation        | evaluation_id, item_id, profile, gates_passed, score, recommendation, split_flag, evaluated_at
@@ -18,7 +19,7 @@ ORDER BY 1;
  pause             | pause_id, item_id, worker, pattern, paused_at, replayed_at
  queue_depth       | worker, lane, waiting, claimed
  restore_drill     | drill_id, ran_at, passed, decrypt_passed, logbook_passed, plainforge_passed, lazarette_passed
-(10 rows)
+(11 rows)
 
 SET SESSION AUTHORIZATION pub_ro;
 SELECT * FROM pub.item ORDER BY item_id;

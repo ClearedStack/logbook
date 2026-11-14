@@ -58,7 +58,7 @@ go vet ./...
 go test -race ./...
 ```
 
-The tests start their own server in a temporary directory, reachable only through a socket in that directory, and remove it when they finish. On each pull request [`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs `tests/run.sh` inside `postgres:17-alpine` as an ordinary user with a read-only filesystem, no capabilities, no network and 256 MiB of memory, and runs `go vet ./...` and `go test -race ./...` against PostgreSQL 17 and `age`.
+The tests start their own server in a temporary directory, reachable only through a socket in that directory, and remove it when they finish.
 
 **Take a consistent dump and run a scratch restore drill**, connected as the owner of the database (with `age` on the `PATH` when `-r` or `-i` is used):
 

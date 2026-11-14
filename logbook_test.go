@@ -233,8 +233,10 @@ func TestDeployManifests(t *testing.T) {
 			t.Errorf("kustomization.yaml does not list %s", m)
 		}
 	}
-	if !strings.Contains(kustom, "- migrate.sh") {
-		t.Error("kustomization.yaml does not include migrate.sh")
+	for _, script := range []string{"migrate.sh", "dump.sh", "restore-drill.sh"} {
+		if !strings.Contains(kustom, "- "+script) {
+			t.Errorf("kustomization.yaml does not include %s", script)
+		}
 	}
 
 	// Namespace and PriorityClass.
@@ -303,6 +305,9 @@ func TestDeployManifests(t *testing.T) {
 		"max_connections=25",
 		"storageClassName: longhorn",
 		"storage: 1Gi",
+		"mountPath: /logbook/bin",
+		"readOnly: true",
+		"name: logbook-migrate",
 	)
 
 	// NetworkPolicy checks: default-deny, logbook-ingress (only migrate, muster, conn on TCP 5432, egress []),
@@ -439,6 +444,9 @@ func postgresEnv(t *testing.T) []string {
 			return env
 		}
 	}
+	if os.Getenv("LOGBOOK_REQUIRE_PG17") == "1" {
+		t.Fatal("PostgreSQL 17 is required (LOGBOOK_REQUIRE_PG17=1) and is not on PATH")
+	}
 	t.Skip("PostgreSQL 17 is not on PATH; skipping live database test")
 	return nil
 }
@@ -468,7 +476,11 @@ func TestSavedSQLSuite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sh tests/run.sh failed: %v\n%s", err, out)
 	}
-	cases, err := filepath.Glob("tests/cases/*.sql")
+	sqlCases, err := filepath.Glob("tests/cases/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shCases, err := filepath.Glob("tests/cases/*.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,9 +490,118 @@ func TestSavedSQLSuite(t *testing.T) {
 			okLines++
 		}
 	}
-	// 15 SQL cases in tests/cases/ plus 3 runner checks (13_migrate, 14_dump_and_restore, 15_cluster_lists_every_migration).
-	want := len(cases) + 3
+	want := len(sqlCases) + len(shCases)
 	if okLines != want {
 		t.Fatalf("sh tests/run.sh reported %d ok lines, want %d:\n%s", okLines, want, out)
 	}
+}
+
+func TestBackupAndRestoreDrill(t *testing.T) {
+	cluster := startPGCluster(t)
+	db := cluster.newDatabase(t)
+
+	seedSQL := `
+INSERT INTO core.item (state, title, address, source)
+VALUES ('recorded', 'Sample FAR Clause Calculator', 'https://sam.gov/opp/sample-1', 'sam-gov');
+INSERT INTO core.ledger (item_id, from_state, to_state, actor, note)
+VALUES ('PA-0001', NULL, 'recorded', 'muster', 'Recorded from intake.');
+INSERT INTO core.result (item_id, worker, payload)
+VALUES ('PA-0001', 'sextant', '{"clauses":["52.204-21"]}'::jsonb);
+INSERT INTO core.component_health (component, state, digest)
+VALUES ('logbook', 'healthy', 'sha256:846a7ddaa67a4b354ae1d21087b683901aa6113a4ed626d3787cfbf6c85e3e07');
+`
+	if _, err := cluster.psql(db, "muster", seedSQL); err != nil {
+		t.Fatalf("seed database: %v", err)
+	}
+
+	tmp := t.TempDir()
+	plainDump := filepath.Join(tmp, "logbook.dump.sql")
+	dbEnv := append(append([]string(nil), cluster.env...), "PGDATABASE="+db, "TMPDIR="+tmp)
+
+	dumpCmd := exec.Command("sh", "dump.sh", "-o", plainDump)
+	dumpCmd.Env = dbEnv
+	if out, err := dumpCmd.CombinedOutput(); err != nil {
+		t.Fatalf("dump.sh failed: %v\n%s", err, out)
+	}
+
+	drillCmd := exec.Command("sh", "restore-drill.sh", "-f", plainDump)
+	drillCmd.Env = dbEnv
+	drillOut, err := drillCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("restore-drill.sh failed: %v\n%s", err, drillOut)
+	}
+	requireContains(t, "restore-drill.sh plain output", string(drillOut),
+		"restore ok\n",
+		"integrity ok: 19 checks, 0 failures\n",
+		"privileges ok\n",
+	)
+
+	ageBin, errAge := exec.LookPath("age")
+	keygenBin, errKeygen := exec.LookPath("age-keygen")
+	if errAge != nil || errKeygen != nil {
+		if os.Getenv("LOGBOOK_REQUIRE_AGE") == "1" {
+			t.Fatalf("age and age-keygen are required (LOGBOOK_REQUIRE_AGE=1): age=%v age-keygen=%v", errAge, errKeygen)
+		}
+		return
+	}
+	_ = ageBin
+
+	goodKey := filepath.Join(tmp, "good-age-key.txt")
+	keygenOut, err := exec.Command(keygenBin, "-o", goodKey).CombinedOutput()
+	if err != nil {
+		t.Fatalf("age-keygen good key: %v\n%s", err, keygenOut)
+	}
+	keyData, err := os.ReadFile(goodKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recipient string
+	for _, line := range strings.Split(string(keyData), "\n") {
+		if after, ok := strings.CutPrefix(strings.TrimSpace(line), "# public key: "); ok {
+			recipient = strings.TrimSpace(after)
+			break
+		}
+	}
+	if recipient == "" {
+		t.Fatalf("could not extract public key from age-keygen output")
+	}
+
+	encDump := filepath.Join(tmp, "logbook.dump.sql.age")
+	encCmd := exec.Command("sh", "dump.sh", "-r", recipient, "-o", encDump)
+	encCmd.Env = dbEnv
+	if out, err := encCmd.CombinedOutput(); err != nil {
+		t.Fatalf("encrypted dump.sh failed: %v\n%s", err, out)
+	}
+	encBytes, err := os.ReadFile(encDump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encBytes, []byte("CREATE SCHEMA")) || bytes.Contains(encBytes, []byte("Sample FAR Clause")) {
+		t.Fatal("encrypted dump leaked plaintext SQL")
+	}
+
+	encDrill := exec.Command("sh", "restore-drill.sh", "-f", encDump, "-i", goodKey)
+	encDrill.Env = dbEnv
+	encDrillOut, err := encDrill.CombinedOutput()
+	if err != nil {
+		t.Fatalf("encrypted restore-drill.sh failed: %v\n%s", err, encDrillOut)
+	}
+	requireContains(t, "restore-drill.sh encrypted output", string(encDrillOut),
+		"decrypt ok\n",
+		"restore ok\n",
+		"integrity ok: 19 checks, 0 failures\n",
+		"privileges ok\n",
+	)
+
+	wrongKey := filepath.Join(tmp, "wrong-age-key.txt")
+	if out, err := exec.Command(keygenBin, "-o", wrongKey).CombinedOutput(); err != nil {
+		t.Fatalf("age-keygen wrong key: %v\n%s", err, out)
+	}
+	wrongDrill := exec.Command("sh", "restore-drill.sh", "-f", encDump, "-i", wrongKey)
+	wrongDrill.Env = dbEnv
+	wrongOut, err := wrongDrill.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected restore-drill.sh to fail with wrong age key, got:\n%s", wrongOut)
+	}
+	requireContains(t, "restore-drill.sh wrong key output", string(wrongOut), "E_PARSE:")
 }

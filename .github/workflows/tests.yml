@@ -33,3 +33,30 @@ jobs:
             --volume "$PWD:/logbook:ro" \
             --workdir /logbook \
             postgres:17-alpine sh tests/run.sh
+
+  go-tests:
+    name: Go vet, race and Contract v1 replay on PostgreSQL 17
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install PostgreSQL 17 and age
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg postgresql-common age
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y --no-install-recommends postgresql-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Run go vet and go test -race
+        env:
+          LOGBOOK_REQUIRE_PG17: "1"
+          LOGBOOK_REQUIRE_AGE: "1"
+        run: |
+          go vet ./...
+          go test -v -race -count=1 ./...

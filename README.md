@@ -12,7 +12,7 @@
 
 ---
 
-> **Status: design.** The first milestone is built and tested, and waiting for review: the schema, the two roles, the public views, the ledger and the integrity checks. The manifests that run it in a cluster are in [`deploy/`](deploy). Backups and the restore drill are not built.
+> **Status: design.** The schema, the two roles, the public views, the ledger, the integrity checks, the Kubernetes manifests in [`deploy/`](deploy), and the database dump and scratch restore-drill scripts (`dump.sh` and `restore-drill.sh`) are built and tested. Off-node storage transfer and retention pruning belong to the cluster backup runner.
 
 Logbook is a control-plane service of the ClearedStack platform. ClearedStack is an open pipeline that finds ideas for government-contracting tools, screens and scores them, and builds each one from the public rule. Logbook is meant to be understood and used without the rest.
 
@@ -27,6 +27,7 @@ Logbook is a schema for PostgreSQL 17, not a program. It has no code that runs b
 - **Refusals with a public error code.** A row that is broken is refused with `E_PARSE`. A value that is well-formed and unknown is refused with `E_NEEDS_SUBTOOL`. A refusal never repeats the value it refused.
 - **Integrity checks.** `core.integrity_check()` runs nineteen checks, always in the same order, for a restore drill to run on a restored copy.
 - **A migration runner.** `migrate.sh` applies each migration once, in order, each in one transaction, and refuses to go on if an applied migration has changed.
+- **Consistent dumps and scratch restore drills.** `dump.sh` takes a consistent `pg_dump --serializable-deferrable` snapshot (optionally piped directly into `age`), and `restore-drill.sh` restores a plain or `age`-encrypted dump into an isolated temporary PostgreSQL 17 cluster (or an empty database), reapplies database-level `CONNECT` fences, and verifies all nineteen integrity checks and role boundaries.
 
 [`SPEC.md`](SPEC.md#schema) lists every table, view, fixed list and rule.
 
@@ -57,23 +58,24 @@ go vet ./...
 go test -race ./...
 ```
 
-The tests start their own server in a temporary directory, reachable only through a socket in that directory, and remove it when they finish. On each pull request `tests/run.sh` runs inside `postgres:17-alpine` as an ordinary user, with a read-only filesystem, no capabilities, no network and 256 MiB of memory. See [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+The tests start their own server in a temporary directory, reachable only through a socket in that directory, and remove it when they finish. On each pull request [`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs `tests/run.sh` inside `postgres:17-alpine` as an ordinary user with a read-only filesystem, no capabilities, no network and 256 MiB of memory, and runs `go vet ./...` and `go test -race ./...` against PostgreSQL 17 and `age`.
 
-**Check a restored copy**, connected as the owner of the database. Every row should show 0 failures:
+**Take a consistent dump and run a scratch restore drill**, connected as the owner of the database (with `age` on the `PATH` when `-r` or `-i` is used):
 
-```sql
-SELECT * FROM core.integrity_check();
+```sh
+sh dump.sh -o logbook.dump.sql
+sh restore-drill.sh -f logbook.dump.sql
 ```
 
 ## Run it in a cluster
 
 [`deploy/`](deploy) is written for Argo CD and kustomize, pointed at the top of this repository. It expects one Secret that is not in this repository, `logbook-credentials` in the namespace `clearedstack`, with `postgres-password`, `muster-password` and (optional until Conn connects) `pub-ro-password`. Make it however your cluster keeps secrets.
 
-After each sync the Job `logbook-migrate` runs `migrate.sh` against the database and then turns login on for `muster` (and for `pub_ro` when `pub-ro-password` is present in `logbook-credentials`).
+After each sync the Job `logbook-migrate` runs `migrate.sh` against the database and then turns login on for `muster` (and for `pub_ro` when `pub-ro-password` is present in `logbook-credentials`). Logbook’s pod also mounts `migrate.sh`, `dump.sh` and `restore-drill.sh` read-only at `/logbook/bin` so consistent dumps can be taken by the database owner inside the pod without adding a third database role.
 
 ## How it is tested
 
-Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the input, and the file of the same name in [`tests/expected/`](tests/expected) is the exact output expected. Any difference fails the test. All the data is made up, and is in [`tests/fixtures/sample_record.sql`](tests/fixtures/sample_record.sql). In addition, [`contract_test.go`](contract_test.go) replays all 52 saved examples from `ClearedStack/muster`'s `contract/v1/examples/` against a migrated PostgreSQL 17 instance, and [`logbook_test.go`](logbook_test.go) checks the repository and Kubernetes manifests.
+Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the input, and the file of the same name in [`tests/expected/`](tests/expected) is the exact output expected. Any difference fails the test. All the data is made up, and is in [`tests/fixtures/sample_record.sql`](tests/fixtures/sample_record.sql). In addition, [`contract_test.go`](contract_test.go) replays all 52 saved examples from `ClearedStack/muster`'s `contract/v1/examples/` against a migrated PostgreSQL 17 instance, and [`logbook_test.go`](logbook_test.go) checks the repository, backup and restore-drill scripts, and Kubernetes manifests.
 
 | Saved example | What it proves |
 | --- | --- |
@@ -88,6 +90,7 @@ Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the i
 | `16_item_id_width` | An item identifier of 4 to 9 digits is accepted, and a shorter, longer or lower-case one is refused |
 | `17_item_numbering` | Logbook gives out identifiers past `PA-9999`, each number has one form, and `muster` cannot supply an identifier |
 | `18_contract_v1_state` | Item sources, proposal reasons and file paths, stopped and future-scheduled queue rows, worker results, lease outcomes, component health and daily visitor counts |
+| `19_backup_and_restore_drill` | `dump.sh` and `restore-drill.sh` dump, encrypt, decrypt, restore into a scratch cluster or an empty database, lock down `CONNECT`, verify `core.integrity_check()`, and refuse damaged inputs |
 
 After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new output, and read the difference before committing it.
 
@@ -98,11 +101,12 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 | [`SPEC.md`](SPEC.md) | The specification: what Logbook does, its interfaces, how it fails and how it is kept safe. Its Schema section describes what is built. |
 | [`migrations/`](migrations) | The schema, as numbered SQL files applied in order. |
 | [`migrate.sh`](migrate.sh) | Applies the migrations. Needs only `sh`, `psql` and `sha256sum`, and writes nothing to disk. |
-| [`tests/`](tests) | The saved SQL examples and the script that runs them. |
+| [`dump.sh`](dump.sh), [`restore-drill.sh`](restore-drill.sh) | Takes a consistent `pg_dump --serializable-deferrable` snapshot (with optional streaming `age` encryption) and verifies scratch or empty-database restores. |
+| [`tests/`](tests) | The saved SQL and shell examples and the script that runs them. |
 | [`testdata/contract/`](testdata/contract) | The 52 saved Contract v1 examples from `ClearedStack/muster`, replayed by `contract_test.go`. |
-| [`logbook_test.go`](logbook_test.go), [`contract_test.go`](contract_test.go) | Go standard-library test suite for manifests, repository rules, SQL examples and Contract v1 replay. |
+| [`logbook_test.go`](logbook_test.go), [`contract_test.go`](contract_test.go) | Go standard-library test suite for manifests, repository rules, backup and restore drills, SQL examples and Contract v1 replay. |
 | [`deploy/`](deploy) | The Kubernetes manifests: namespace, high priority class, default-deny and Logbook network policies, digest-pinned StatefulSet and volume, and migration Job. |
-| [`kustomization.yaml`](kustomization.yaml) | What Argo CD applies: `deploy/`, with `migrate.sh` and the migrations as ConfigMaps for the Job. |
+| [`kustomization.yaml`](kustomization.yaml) | What Argo CD applies: `deploy/`, with `migrate.sh`, `dump.sh`, `restore-drill.sh` and the migrations as ConfigMaps. |
 | [`PROMPT.md`](PROMPT.md) | The prompt this build was started from. |
 | [`component.json`](component.json) | This component’s entry in the ClearedStack naming registry. |
 | [`brand/`](brand) | The Logbook logo and mark, for light and dark backgrounds. |
@@ -126,16 +130,16 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 
 ## Not yet done
 
-These are in `SPEC.md` and belong to Lazarette and Shipkeeper rather than this schema repository:
+These are in `SPEC.md` and belong to the cluster’s multi-store backup and drill runner across Logbook, Plainforge and Lazarette:
 
 | Requirement | State |
 | --- | --- |
-| Nightly backup: a consistent dump, encrypted with `age`, sent off the node, old copies pruned | Built in Lazarette when Lazarette is deployed. `14_dump_and_restore` proves `pg_dump` and restore on Logbook |
-| Monthly restore drill | Built in Lazarette/Shipkeeper when deployed. `core.integrity_check()`, `core.restore_drill` and `pub.restore_drill` are ready here |
+| Off-node backup transfer and retention pruning | `dump.sh` produces the consistent (and `age`-encrypted) Logbook archive; cluster CronJob transfer and pruning belong to the multi-store backup runner |
+| Monthly four-store restore drill orchestration and reporting | `restore-drill.sh` runs Logbook’s decrypt and scratch restore check; orchestrating Logbook + Plainforge + Lazarette and writing `core.restore_drill` through Muster belongs to the cluster drill runner |
 
 Three things to know before relying on it:
 
-- **Restoring a dump does not restore who may connect.** A dump of one database does not carry the database’s own privileges. After a restore, anyone with a login on the server can connect until this is applied again: `REVOKE ALL ON DATABASE ... FROM PUBLIC` and `GRANT CONNECT ON DATABASE ... TO muster, pub_ro`. The saved example `14_dump_and_restore` shows it.
+- **Restoring a raw dump by hand does not restore who may connect.** A dump of one database does not carry the database’s own privileges. `restore-drill.sh --into-empty-db` reapplies `REVOKE ALL ON DATABASE ... FROM PUBLIC` and `GRANT CONNECT ON DATABASE ... TO muster, pub_ro` automatically; if you load a dump with `psql` directly, run those two statements yourself. The saved examples `14_dump_and_restore` and `19_backup_and_restore_drill` show both cases.
 - **Identifiers can have gaps.** A refused insert still uses up its number. Logbook gives out every identifier: `PA-0001` to `PA-9999`, then `PA-10000` and on to `PA-999999999`. Muster cannot supply one, or set the time an item was recorded.
 - **Logbook does not decide which move between states is allowed.** It checks that both ends of a move are states it knows. Muster is the gatekeeper.
 

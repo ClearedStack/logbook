@@ -1,0 +1,68 @@
+
+== An empty database with no Logbook schema: dump.sh refuses.
+E_PARSE: the database does not hold a migrated Logbook schema
+exit status 1
+output file exists: no
+
+== A migrated database: dump.sh writes a consistent dump atomically.
+exit status 0
+dump file non-empty: yes
+
+== Scratch restore drill: starts an isolated PostgreSQL 17 server, verifies everything, and tears down.
+restore ok
+integrity ok: 19 checks, 0 failures
+privileges ok
+exit status 0
+scratch entries left behind: 0
+
+== Restore into an empty database: locks down CONNECT and verifies integrity and role fences.
+restore ok
+integrity ok: 19 checks, 0 failures
+privileges ok
+exit status 0
+
+== Restored empty-db copy preserves Contract v1 state and fences.
+anyone may connect: false
+pub_ro may create temp tables: false
+results 1, outcomes 1, health 1, submissions 1
+PA-0006
+
+== Restore into a database that is already populated: refused without harming existing data.
+E_PARSE: target database is not empty
+exit status 1
+items still there: 6
+
+== Malformed age recipient: refused without repeating the bad value or leaving a file.
+E_PARSE: the age recipient is not well-formed
+exit status 1
+output file exists: no
+
+== Encryption requested when age is not on the PATH: refused with E_NEEDS_SUBTOOL.
+E_NEEDS_SUBTOOL: age is not on the PATH
+exit status 1
+output file exists: no
+
+== Encrypted dump with age: writes no plaintext header and restores cleanly with the matching key.
+exit status 0
+starts with age header: yes
+
+== Scratch restore drill on encrypted dump with matching key: decrypts and passes.
+decrypt ok
+restore ok
+integrity ok: 19 checks, 0 failures
+privileges ok
+exit status 0
+
+== Restore drill on encrypted dump with wrong key: refused before touching any database.
+E_PARSE: age could not decrypt the dump with the given key
+exit status 1
+
+== Tampered dump whose item state disagrees with core.ledger: caught by core.integrity_check().
+restore ok
+E_PARSE: restored database failed integrity check each item is in the state its last ledger entry gave it (1 failures)
+exit status 1
+
+== The database does not answer when dumping: refused without naming where it was looked for.
+E_TIMEOUT: the database did not answer
+exit status 1
+output file exists: no

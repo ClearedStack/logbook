@@ -20,19 +20,19 @@ Logbook is a schema for PostgreSQL 17, not a program. It has no code that runs b
 
 ## What works today
 
-- **The working records.** Nine tables in the `core` schema hold the items, their evaluations and decisions, the edit proposals, the queue and its leases, the pauses for a missing rule, the restore drills and the ledger.
-- **The public views.** Ten views in the `pub` schema show what is meant to be public and nothing else. An item’s address, a lease token and the text of an unapproved proposal are in no view.
+- **The working records.** Thirteen tables in the `core` schema (twelve working tables plus `core.migration`) hold the items and their intake sources, evaluations, decisions, edit proposals with their reasons and file paths, the queue with its leases and stopped steps, pauses for missing rules, worker JSON results, last lease outcomes, component health reports and digests, daily visitor submission counts, restore drills and the ledger.
+- **The public views.** Eleven views in the `pub` schema show what is meant to be public and nothing else. Item addresses and sources, lease tokens and outcomes, worker result payloads, image digests, visitor keys, and the reason, file path or unapproved text of a proposal are in no view.
 - **Two roles.** `pub_ro` can read the public views and nothing else. `muster` can read the working tables and write each one only as its job needs. Nobody else is granted anything.
 - **An append-only ledger.** Nobody can change, remove or truncate a ledger entry, including the owner of the database.
 - **Refusals with a public error code.** A row that is broken is refused with `E_PARSE`. A value that is well-formed and unknown is refused with `E_NEEDS_SUBTOOL`. A refusal never repeats the value it refused.
-- **Integrity checks.** `core.integrity_check()` runs fifteen checks, always in the same order, for a restore drill to run on a restored copy.
+- **Integrity checks.** `core.integrity_check()` runs nineteen checks, always in the same order, for a restore drill to run on a restored copy.
 - **A migration runner.** `migrate.sh` applies each migration once, in order, each in one transaction, and refuses to go on if an applied migration has changed.
 
 [`SPEC.md`](SPEC.md#schema) lists every table, view, fixed list and rule.
 
 ## Run it
 
-You need PostgreSQL 17 and a shell. Nothing else is installed or downloaded.
+You need PostgreSQL 17 and a shell (and Go 1.24 or newer to run the Go test suite). Nothing else is installed or downloaded.
 
 **Apply the schema** to an empty database. Name the database the usual way, with `PGHOST`, `PGPORT`, `PGDATABASE` and `PGUSER`, and connect as the role that is to own Logbook:
 
@@ -49,13 +49,15 @@ ALTER ROLE muster LOGIN PASSWORD '...';
 ALTER ROLE pub_ro LOGIN PASSWORD '...';
 ```
 
-**Run the tests** as an ordinary user, with PostgreSQL 17’s `initdb`, `pg_ctl`, `psql`, `createdb` and `pg_dump` on the `PATH`:
+**Run the tests** as an ordinary user, with PostgreSQL 17’s `initdb`, `pg_ctl`, `psql`, `createdb`, `dropdb` and `pg_dump` on the `PATH`:
 
 ```sh
 sh tests/run.sh
+go vet ./...
+go test -race ./...
 ```
 
-The tests start their own server in a temporary directory, reachable only through a socket in that directory, and remove it when they finish. On each pull request they run inside `postgres:17-alpine` as an ordinary user, with a read-only filesystem, no capabilities, no network and 256 MiB of memory. See [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+The tests start their own server in a temporary directory, reachable only through a socket in that directory, and remove it when they finish. On each pull request `tests/run.sh` runs inside `postgres:17-alpine` as an ordinary user, with a read-only filesystem, no capabilities, no network and 256 MiB of memory. See [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 
 **Check a restored copy**, connected as the owner of the database. Every row should show 0 failures:
 
@@ -65,13 +67,13 @@ SELECT * FROM core.integrity_check();
 
 ## Run it in a cluster
 
-[`deploy/`](deploy) is written for Argo CD and kustomize, pointed at the top of this repository. It expects one Secret that is not in this repository, `logbook-credentials` in the namespace `clearedstack`, with two keys: `postgres-password` and `muster-password`. Make it however your cluster keeps secrets.
+[`deploy/`](deploy) is written for Argo CD and kustomize, pointed at the top of this repository. It expects one Secret that is not in this repository, `logbook-credentials` in the namespace `clearedstack`, with `postgres-password`, `muster-password` and (optional until Conn connects) `pub-ro-password`. Make it however your cluster keeps secrets.
 
-After each sync the Job `logbook-migrate` runs `migrate.sh` against the database and then turns login on for `muster` with its password from that Secret.
+After each sync the Job `logbook-migrate` runs `migrate.sh` against the database and then turns login on for `muster` (and for `pub_ro` when `pub-ro-password` is present in `logbook-credentials`).
 
 ## How it is tested
 
-Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the input, and the file of the same name in [`tests/expected/`](tests/expected) is the exact output expected. Any difference fails the test. All the data is made up, and is in [`tests/fixtures/sample_record.sql`](tests/fixtures/sample_record.sql).
+Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the input, and the file of the same name in [`tests/expected/`](tests/expected) is the exact output expected. Any difference fails the test. All the data is made up, and is in [`tests/fixtures/sample_record.sql`](tests/fixtures/sample_record.sql). In addition, [`contract_test.go`](contract_test.go) replays all 52 saved examples from `ClearedStack/muster`'s `contract/v1/examples/` against a migrated PostgreSQL 17 instance, and [`logbook_test.go`](logbook_test.go) checks the repository and Kubernetes manifests.
 
 | Saved example | What it proves |
 | --- | --- |
@@ -83,6 +85,9 @@ Every rule has a saved example. A file in [`tests/cases/`](tests/cases) is the i
 | `13_migrate` | `migrate.sh` applies each migration once and refuses each thing it should |
 | `14_dump_and_restore` | A dump restored into a new database passes the integrity checks and keeps both roles fenced |
 | `15_cluster_lists_every_migration` | Every migration is named in `kustomization.yaml`, so the cluster is handed each one |
+| `16_item_id_width` | An item identifier of 4 to 9 digits is accepted, and a shorter, longer or lower-case one is refused |
+| `17_item_numbering` | Logbook gives out identifiers past `PA-9999`, each number has one form, and `muster` cannot supply an identifier |
+| `18_contract_v1_state` | Item sources, proposal reasons and file paths, stopped and future-scheduled queue rows, worker results, lease outcomes, component health and daily visitor counts |
 
 After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new output, and read the difference before committing it.
 
@@ -93,8 +98,10 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 | [`SPEC.md`](SPEC.md) | The specification: what Logbook does, its interfaces, how it fails and how it is kept safe. Its Schema section describes what is built. |
 | [`migrations/`](migrations) | The schema, as numbered SQL files applied in order. |
 | [`migrate.sh`](migrate.sh) | Applies the migrations. Needs only `sh`, `psql` and `sha256sum`, and writes nothing to disk. |
-| [`tests/`](tests) | The saved examples and the script that runs them. |
-| [`deploy/`](deploy) | The Kubernetes manifests: the namespace and its default-deny network policy, the database and its volume, and the Job that applies the migrations. |
+| [`tests/`](tests) | The saved SQL examples and the script that runs them. |
+| [`testdata/contract/`](testdata/contract) | The 52 saved Contract v1 examples from `ClearedStack/muster`, replayed by `contract_test.go`. |
+| [`logbook_test.go`](logbook_test.go), [`contract_test.go`](contract_test.go) | Go standard-library test suite for manifests, repository rules, SQL examples and Contract v1 replay. |
+| [`deploy/`](deploy) | The Kubernetes manifests: namespace, high priority class, default-deny and Logbook network policies, digest-pinned StatefulSet and volume, and migration Job. |
 | [`kustomization.yaml`](kustomization.yaml) | What Argo CD applies: `deploy/`, with `migrate.sh` and the migrations as ConfigMaps for the Job. |
 | [`PROMPT.md`](PROMPT.md) | The prompt this build was started from. |
 | [`component.json`](component.json) | This component’s entry in the ClearedStack naming registry. |
@@ -107,7 +114,7 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 | **Role** | Control-plane service |
 | **Formerly** | `postgres` |
 | **Namespace** | `clearedstack` |
-| **Container image** | `postgres:17-alpine (upstream PostgreSQL; Logbook is the schema and ledger on top)` |
+| **Container image** | `postgres:17 (upstream PostgreSQL; Logbook is the schema and ledger on top)` |
 | **Memory budget** | 256 MiB |
 | **Depends on** | Nothing else in the platform |
 | **Depended on by** | [Conn](https://github.com/ClearedStack/clearedstack.com), [Muster](https://github.com/ClearedStack/muster) |
@@ -119,23 +126,17 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 
 ## Not yet done
 
-These are in `SPEC.md` and are not built here.
+These are in `SPEC.md` and belong to Lazarette and Shipkeeper rather than this schema repository:
 
 | Requirement | State |
 | --- | --- |
-| Nightly backup: a consistent dump, encrypted with `age`, sent off the node, old copies pruned | Not built. The saved example `14_dump_and_restore` covers only taking a dump and loading it |
-| Monthly restore drill | Not built. The integrity checks it would run on the database are built, and so is the table and view its result goes in |
-| Deployment: the priority class | Not set. [`deploy/`](deploy) has the rest: the persistent volume, the `ClusterIP` service, running as non-root with every capability dropped. It runs the official `postgres:17` image, pinned by digest, where the naming registry says `17-alpine`. The ownership map still puts the manifest in `clearedstack.com`, at `deploy/logbook/app.yaml` |
-| Network isolation: Muster and Conn | [`deploy/networkpolicy.yaml`](deploy/networkpolicy.yaml) denies everything in the namespace and lets only the migrate Job reach the database. Muster and Conn are not deployed, so no rule lets them in yet |
-| Login for `pub_ro` | Not turned on. The migrate Job turns login on for `muster` only |
-| Settings that keep the running database within 256 MiB | Not built. The tests run within 256 MiB, which is not the same thing as a database under load |
-| A place for what Sextant observes about an item, and for the health of each component | Not built. `SPEC.md` does not list them among what Logbook stores. See its open questions |
-| Functions for Muster to claim, renew and release a lease | Not built. The table holds a lease; how long one lasts is not specified |
+| Nightly backup: a consistent dump, encrypted with `age`, sent off the node, old copies pruned | Built in Lazarette when Lazarette is deployed. `14_dump_and_restore` proves `pg_dump` and restore on Logbook |
+| Monthly restore drill | Built in Lazarette/Shipkeeper when deployed. `core.integrity_check()`, `core.restore_drill` and `pub.restore_drill` are ready here |
 
 Three things to know before relying on it:
 
 - **Restoring a dump does not restore who may connect.** A dump of one database does not carry the database’s own privileges. After a restore, anyone with a login on the server can connect until this is applied again: `REVOKE ALL ON DATABASE ... FROM PUBLIC` and `GRANT CONNECT ON DATABASE ... TO muster, pub_ro`. The saved example `14_dump_and_restore` shows it.
-- **Identifiers can have gaps.** A refused insert still uses up its number, and numbers stop at `PA-9999`.
+- **Identifiers can have gaps.** A refused insert still uses up its number. Logbook gives out every identifier: `PA-0001` to `PA-9999`, then `PA-10000` and on to `PA-999999999`. Muster cannot supply one, or set the time an item was recorded.
 - **Logbook does not decide which move between states is allowed.** It checks that both ends of a move are states it knows. Muster is the gatekeeper.
 
 ## Names

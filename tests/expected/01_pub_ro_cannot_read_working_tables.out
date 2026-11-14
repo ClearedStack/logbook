@@ -127,7 +127,7 @@ JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'pub' GROUP BY 1 ORDER BY 1;
  relkind | count 
 ---------+-------
- v       |    10
+ v       |    11
 (1 row)
 
 -- What pub_ro holds on the schemas and on the database.

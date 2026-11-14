@@ -1,10 +1,9 @@
-# Applies the migrations, then lets Muster log in.
+# Applies the migrations, then lets Muster (and Conn, once pub-ro-password is
+# in logbook-credentials) log in.
 #
 # An Argo CD hook: it runs after each sync, once the database is ready, and the
 # Job from the sync before is removed first. migrate.sh applies each migration
 # once, so a run with nothing new prints "nothing to apply".
-#
-# pub_ro is left unable to log in until Conn is deployed.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -12,6 +11,7 @@ metadata:
   namespace: clearedstack
   labels:
     app.kubernetes.io/name: logbook-migrate
+    app.kubernetes.io/part-of: clearedstack
   annotations:
     argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
@@ -21,6 +21,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: logbook-migrate
+        app.kubernetes.io/part-of: clearedstack
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
@@ -49,13 +50,20 @@ spec:
             - |
               set -eu
               sh /logbook/bin/migrate.sh
-              # The password is read from the environment by psql itself, so it
+              # Each password is read from the environment by psql itself, so it
               # is never on a command line.
               psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
               \getenv muster_password MUSTER_PASSWORD
               ALTER ROLE muster LOGIN PASSWORD :'muster_password';
               SQL
               echo 'muster may log in'
+              if [ -n "${PUB_RO_PASSWORD:-}" ]; then
+                psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
+              \getenv pub_ro_password PUB_RO_PASSWORD
+              ALTER ROLE pub_ro LOGIN PASSWORD :'pub_ro_password';
+              SQL
+                echo 'pub_ro may log in'
+              fi
           env:
             - name: PGHOST
               value: logbook
@@ -73,15 +81,22 @@ spec:
                 secretKeyRef:
                   name: logbook-credentials
                   key: muster-password
+            - name: PUB_RO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: logbook-credentials
+                  key: pub-ro-password
+                  optional: true
             - name: LOGBOOK_MIGRATIONS
               value: /logbook/migrations
           resources:
             requests:
-              cpu: 20m
-              memory: 256Mi
+              cpu: 10m
+              memory: 32Mi
             limits:
-              memory: 256Mi
+              memory: 64Mi
           securityContext:
+            privileged: false
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

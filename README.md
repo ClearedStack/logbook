@@ -69,9 +69,14 @@ sh restore-drill.sh -f logbook.dump.sql
 
 ## Run it in a cluster
 
-[`deploy/`](deploy) is written for Argo CD and kustomize, pointed at the top of this repository. It expects one Secret that is not in this repository, `logbook-credentials` in the namespace `clearedstack`, with `postgres-password`, `muster-password` and (optional until Conn connects) `pub-ro-password`. Make it however your cluster keeps secrets.
+[`deploy/`](deploy) is written for Argo CD and kustomize, pointed at the top of this repository. It expects Secrets and a ConfigMap that are not in this repository, made in `clearedstack` however your cluster keeps secrets:
 
-After each sync the Job `logbook-migrate` runs `migrate.sh` against the database and then turns login on for `muster` (and for `pub_ro` when `pub-ro-password` is present in `logbook-credentials`). Logbook’s pod also mounts `migrate.sh`, `dump.sh` and `restore-drill.sh` read-only at `/logbook/bin` so consistent dumps can be taken by the database owner inside the pod without adding a third database role.
+- `logbook-credentials` (Secret): `postgres-password`, `muster-password` and (optional until Conn connects) `pub-ro-password`.
+- `logbook-backup-config` (ConfigMap, optional until backups are enabled): `recipient` holding the public `age` recipient key.
+- `logbook-backup-dest` (Secret, optional until backups are enabled): `url` and `token` for off-node backup storage.
+- `logbook-drill-key` (Secret, separate from `logbook-backup-dest` and mounted only by `logbook-restore-drill`, never by `logbook-backup`): `identity` holding the `age` decryption key for the monthly drill.
+
+After each sync the Job `logbook-migrate` runs `migrate.sh` against the database and then turns login on for `muster` (and for `pub_ro` when `pub-ro-password` is present in `logbook-credentials`). [`deploy/backup-cronjob.yaml`](deploy/backup-cronjob.yaml) schedules the nightly `logbook-backup` `CronJob` (`02:00 UTC`, dumping into a memory-backed `emptyDir` so plaintext SQL never touches disk) and the monthly `logbook-restore-drill` `CronJob` (`03:30 UTC` on day 1, running `restore-drill.sh` on a local Unix socket with zero network path to the live database).
 
 ## How it is tested
 
@@ -105,7 +110,7 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 | [`tests/`](tests) | The saved SQL and shell examples and the script that runs them. |
 | [`testdata/contract/`](testdata/contract) | The 52 saved Contract v1 examples from `ClearedStack/muster`, replayed by `contract_test.go`. |
 | [`logbook_test.go`](logbook_test.go), [`contract_test.go`](contract_test.go) | Go standard-library test suite for manifests, repository rules, backup and restore drills, SQL examples and Contract v1 replay. |
-| [`deploy/`](deploy) | The Kubernetes manifests: namespace, high priority class, default-deny and Logbook network policies, digest-pinned StatefulSet and volume, and migration Job. |
+| [`deploy/`](deploy) | The Kubernetes manifests: namespace, high and low priority classes, default-deny and Logbook network policies, digest-pinned StatefulSet and volume, migration Job, and nightly backup and monthly restore-drill CronJobs. |
 | [`kustomization.yaml`](kustomization.yaml) | What Argo CD applies: `deploy/`, with `migrate.sh`, `dump.sh`, `restore-drill.sh` and the migrations as ConfigMaps. |
 | [`PROMPT.md`](PROMPT.md) | The prompt this build was started from. |
 | [`component.json`](component.json) | This component’s entry in the ClearedStack naming registry. |
@@ -130,12 +135,12 @@ After changing a rule on purpose, run `sh tests/run.sh --accept` to save the new
 
 ## Not yet done
 
-These are in `SPEC.md` and belong to the cluster’s multi-store backup and drill runner across Logbook, Plainforge and Lazarette:
+These cross-component items sit outside this schema repository:
 
 | Requirement | State |
 | --- | --- |
-| Off-node backup transfer and retention pruning | `dump.sh` produces the consistent (and `age`-encrypted) Logbook archive; cluster CronJob transfer and pruning belong to the multi-store backup runner |
-| Monthly four-store restore drill orchestration and reporting | `restore-drill.sh` runs Logbook’s decrypt and scratch restore check; orchestrating Logbook + Plainforge + Lazarette and writing `core.restore_drill` through Muster belongs to the cluster drill runner |
+| Signed `logbook-backup` helper image in Lazarette | [`deploy/backup-cronjob.yaml`](deploy/backup-cronjob.yaml) pins the `sha256:0000...` bootstrap placeholder until the cluster’s `age` + HTTPS transfer helper image is built and signed into Lazarette |
+| Monthly four-store restore drill reporting | `logbook-restore-drill` runs Logbook’s decrypt and isolated scratch check; recording the combined four-check outcome (`decrypt`, `logbook`, `plainforge`, `lazarette`) in `core.restore_drill` awaits a Contract v1 call on Muster |
 
 Three things to know before relying on it:
 

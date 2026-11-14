@@ -17,6 +17,7 @@ resources:
   - deploy/networkpolicy.yaml
   - deploy/logbook.yaml
   - deploy/migrate-job.yaml
+  - deploy/backup-cronjob.yaml
 
 # Fixed names: the Job is an Argo CD hook that is made again on every sync, so
 # it always mounts the ConfigMaps as they are now.

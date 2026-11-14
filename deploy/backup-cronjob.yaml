@@ -1,0 +1,295 @@
+# Nightly age-encrypted off-node backup and monthly isolated scratch restore
+# drill for Logbook (SPEC.md: Failure Modes & Recovery).
+#
+# Schedules are staggered ahead of Plainforge's 03:00 and 04:00 UTC windows so
+# two archive/drill Jobs never compete for memory on the 4 GiB node.
+#
+# No secrets are stored in Git:
+#   - Secret "logbook-credentials" provides "postgres-password" for dump.sh.
+#   - ConfigMap "logbook-backup-config" provides the public age recipient key
+#     ("recipient", safe in a ConfigMap because age public keys only encrypt).
+#   - Secret "logbook-backup-dest" provides the off-node endpoint ("url") and
+#     upload/download credential ("token").
+#   - Secret "logbook-drill-key" (separate from "logbook-backup-dest" per
+#     SPEC.md) provides the age decryption identity ("identity") only to the
+#     monthly restore drill pod, never to the nightly backup pod.
+#
+# Replace the placeholder sha256 digest on logbook-backup below with the signed
+# helper image digest pushed to Lazarette before enabling off-node uploads.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: logbook-backup
+  namespace: clearedstack
+  labels:
+    app.kubernetes.io/name: logbook-backup
+    app.kubernetes.io/part-of: clearedstack
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: logbook-backup
+            app.kubernetes.io/part-of: clearedstack
+        spec:
+          automountServiceAccountToken: false
+          priorityClassName: cs-build-low
+          restartPolicy: Never
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/arch
+                        operator: In
+                        values: ["arm64"]
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values: ["cm3588-plus"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: dump
+              image: docker.io/library/postgres:17@sha256:846a7ddaa67a4b354ae1d21087b683901aa6113a4ed626d3787cfbf6c85e3e07
+              command:
+                - /bin/sh
+                - /logbook/bin/dump.sh
+                - -o
+                - /scratch/logbook.dump.sql
+              env:
+                - name: PGHOST
+                  value: logbook
+                - name: PGDATABASE
+                  value: logbook
+                - name: PGUSER
+                  value: postgres
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: logbook-credentials
+                      key: postgres-password
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi
+              securityContext:
+                privileged: false
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /logbook/bin
+                  readOnly: true
+                - name: scratch
+                  mountPath: /scratch
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: backup
+              image: lazarette.clearedstack.svc.cluster.local:5000/logbook-backup@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              args:
+                - backup
+                - -in=/scratch/logbook.dump.sql
+                - -recipient-file=/etc/logbook-backup/recipient
+                - -dest-token-file=/var/run/secrets/logbook-backup/token
+              env:
+                - name: LOGBOOK_BACKUP_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: logbook-backup-dest
+                      key: url
+                      optional: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi
+              securityContext:
+                privileged: false
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scratch
+                  mountPath: /scratch
+                - name: backup-config
+                  mountPath: /etc/logbook-backup
+                  readOnly: true
+                - name: backup-dest
+                  mountPath: /var/run/secrets/logbook-backup
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: logbook-migrate
+            # Memory-backed handoff so plaintext SQL never touches physical disk.
+            - name: scratch
+              emptyDir:
+                medium: Memory
+                sizeLimit: 64Mi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
+            - name: backup-config
+              configMap:
+                name: logbook-backup-config
+                optional: true
+            - name: backup-dest
+              secret:
+                secretName: logbook-backup-dest
+                defaultMode: 0400
+                optional: true
+---
+# Monthly restore drill: downloads and decrypts the latest age-encrypted backup
+# into memory, then runs restore-drill.sh inside an isolated scratch PostgreSQL
+# 17 server with zero network access to the live Logbook database or cluster.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: logbook-restore-drill
+  namespace: clearedstack
+  labels:
+    app.kubernetes.io/name: logbook-restore-drill
+    app.kubernetes.io/part-of: clearedstack
+spec:
+  schedule: "30 3 1 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: logbook-restore-drill
+            app.kubernetes.io/part-of: clearedstack
+        spec:
+          automountServiceAccountToken: false
+          priorityClassName: cs-build-low
+          restartPolicy: Never
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/arch
+                        operator: In
+                        values: ["arm64"]
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values: ["cm3588-plus"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: fetch-and-decrypt
+              image: lazarette.clearedstack.svc.cluster.local:5000/logbook-backup@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              args:
+                - fetch-decrypt
+                - -out=/scratch/logbook.dump.sql
+                - -identity-file=/var/run/secrets/logbook-drill/identity
+                - -dest-token-file=/var/run/secrets/logbook-backup/token
+              env:
+                - name: LOGBOOK_BACKUP_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: logbook-backup-dest
+                      key: url
+                      optional: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi
+              securityContext:
+                privileged: false
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scratch
+                  mountPath: /scratch
+                - name: backup-dest
+                  mountPath: /var/run/secrets/logbook-backup
+                  readOnly: true
+                - name: drill-key
+                  mountPath: /var/run/secrets/logbook-drill
+                  readOnly: true
+          containers:
+            - name: restore-drill
+              image: docker.io/library/postgres:17@sha256:846a7ddaa67a4b354ae1d21087b683901aa6113a4ed626d3787cfbf6c85e3e07
+              command:
+                - /bin/sh
+                - /logbook/bin/restore-drill.sh
+                - -f
+                - /scratch/logbook.dump.sql
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                privileged: false
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /logbook/bin
+                  readOnly: true
+                - name: scratch
+                  mountPath: /scratch
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: logbook-migrate
+            - name: scratch
+              emptyDir:
+                medium: Memory
+                sizeLimit: 64Mi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 128Mi
+            - name: backup-dest
+              secret:
+                secretName: logbook-backup-dest
+                defaultMode: 0400
+                optional: true
+            - name: drill-key
+              secret:
+                secretName: logbook-drill-key
+                defaultMode: 0400
+                optional: true

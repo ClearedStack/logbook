@@ -17,11 +17,15 @@ NOTICE:  truncate cascades to table "evaluation"
 NOTICE:  truncate cascades to table "queue"
 NOTICE:  truncate cascades to table "pause"
 NOTICE:  truncate cascades to table "ledger"
+NOTICE:  truncate cascades to table "result"
+NOTICE:  truncate cascades to table "lease_outcome"
 NOTICE:  truncate cascades to table "decision"
 ERROR:  the ledger is append-only: an entry is never changed or removed
 TRUNCATE core.edit_proposal CASCADE;
 NOTICE:  truncate cascades to table "queue"
 NOTICE:  truncate cascades to table "ledger"
+NOTICE:  truncate cascades to table "result"
+NOTICE:  truncate cascades to table "lease_outcome"
 ERROR:  the ledger is append-only: an entry is never changed or removed
 -- An item or a proposal with a history cannot be removed from under it.
 DELETE FROM core.item WHERE item_id = 'PA-0002';

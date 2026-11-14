@@ -1,0 +1,372 @@
+-- Rules for the Contract v1 working records and public health view added in
+-- migration 0010: item sources, proposal reasons and file paths, held and
+-- future-dated queue steps, worker results, lease outcomes, component health
+-- and daily visitor submission counts.
+-- 1. Item sources: the four known sources are accepted by Muster; broken ones
+-- are E_PARSE and unfamiliar ones are E_NEEDS_SUBTOOL.
+SET SESSION AUTHORIZATION muster;
+INSERT INTO core.item (state, title, address, source) VALUES
+    ('discovered', 'Sample intake item one',   'https://tools.example/src-1', 'sam-gov'),
+    ('discovered', 'Sample intake item two',   'https://tools.example/src-2', 'github-issues'),
+    ('discovered', 'Sample intake item three', 'https://tools.example/src-3', 'web-sweep'),
+    ('discovered', 'Sample intake item four',  'https://tools.example/src-4', 'site-form')
+RETURNING item_id, source;
+ item_id |    source     
+---------+---------------
+ PA-0006 | sam-gov
+ PA-0007 | github-issues
+ PA-0008 | web-sweep
+ PA-0009 | site-form
+(4 rows)
+
+INSERT INTO core.item (state, title, source) VALUES ('discovered', 'Sample', '');
+ERROR:  E_PARSE: source is not a well-formed name
+INSERT INTO core.item (state, title, source) VALUES ('discovered', 'Sample', 'SAM GOV');
+ERROR:  E_PARSE: source is not a well-formed name
+INSERT INTO core.item (state, title, source) VALUES ('discovered', 'Sample', 'made-up-source');
+ERROR:  E_NEEDS_SUBTOOL: source is a name Logbook has no rule for
+RESET SESSION AUTHORIZATION;
+-- Keep ledger entries for the four new items so the record stays whole.
+INSERT INTO core.ledger (item_id, actor, to_state, note, recorded_at) VALUES
+    ('PA-0006', 'trawl', 'discovered', 'record', '2026-01-12 10:00+00'),
+    ('PA-0007', 'trawl', 'discovered', 'record', '2026-01-12 10:01+00'),
+    ('PA-0008', 'trawl', 'discovered', 'record', '2026-01-12 10:02+00'),
+    ('PA-0009', 'conn',  'discovered', 'record', '2026-01-12 10:03+00');
+-- 2. Edit proposals: reason and file_path are accepted on insert, cannot be
+-- rewritten by Muster, and never appear in pub.edit_proposal.
+SET SESSION AUTHORIZATION muster;
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload, reason, file_path, status, submitted_at)
+VALUES ('catalog.sample-calculator.description', 'clearedstack.com', 'DATA',
+        'Sample change to the description.',
+        'Sample private reason for the change.',
+        'src/app/platform/[slug]/page.tsx',
+        'pending_approval', '2026-01-12 11:00+00')
+RETURNING proposal_id, file_path;
+ proposal_id |            file_path             
+-------------+----------------------------------
+           4 | src/app/platform/[slug]/page.tsx
+(1 row)
+
+UPDATE core.edit_proposal SET reason = 'Rewritten.' WHERE proposal_id = 4;
+ERROR:  permission denied for table edit_proposal
+UPDATE core.edit_proposal SET file_path = 'app.yaml' WHERE proposal_id = 4;
+ERROR:  permission denied for table edit_proposal
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload, reason)
+VALUES ('pipeline.trawl', 'trawl', 'ISSUE', 'Sample.', '   ');
+ERROR:  E_PARSE: reason is missing
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload, file_path)
+VALUES ('pipeline.trawl', 'trawl', 'ISSUE', 'Sample.', '/etc/passwd');
+ERROR:  E_PARSE: file_path is not a well-formed relative path
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload, file_path)
+VALUES ('pipeline.trawl', 'trawl', 'ISSUE', 'Sample.', '../app.yaml');
+ERROR:  E_PARSE: file_path is not a well-formed relative path
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload, file_path)
+VALUES ('pipeline.trawl', 'trawl', 'ISSUE', 'Sample.', 'src/../app.yaml');
+ERROR:  E_PARSE: file_path is not a well-formed relative path
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload, file_path)
+VALUES ('pipeline.trawl', 'trawl', 'ISSUE', 'Sample.', 'src//app.yaml');
+ERROR:  E_PARSE: file_path is not a well-formed relative path
+INSERT INTO core.ledger (proposal_id, actor, to_state, recorded_at)
+VALUES (4, 'muster', 'pending_approval', '2026-01-12 11:00+00');
+-- Approve proposal 4 so its payload is public while reason and file_path stay private.
+UPDATE core.edit_proposal SET status = 'approved', decided_at = '2026-01-12 11:05+00' WHERE proposal_id = 4;
+INSERT INTO core.ledger (proposal_id, actor, from_state, to_state, recorded_at)
+VALUES (4, 'countersign', 'pending_approval', 'approved', '2026-01-12 11:05+00');
+RESET SESSION AUTHORIZATION;
+-- Proposal numbering stops at 999999999 (EP-999999999).
+BEGIN;
+SELECT setval(pg_get_serial_sequence('core.edit_proposal', 'proposal_id'), 999999998);
+  setval   
+-----------
+ 999999998
+(1 row)
+
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload)
+VALUES ('pipeline.trawl', 'trawl', 'ISSUE', 'Sample last proposal.')
+RETURNING proposal_id;
+ proposal_id 
+-------------
+   999999999
+(1 row)
+
+SAVEPOINT at_limit;
+INSERT INTO core.edit_proposal (element_id, owner_repo, edit_class, payload)
+VALUES ('pipeline.trawl', 'trawl', 'ISSUE', 'Sample proposal too many.');
+ERROR:  nextval: reached maximum value of sequence "edit_proposal_proposal_id_seq" (999999999)
+ROLLBACK TO SAVEPOINT at_limit;
+ROLLBACK;
+SELECT setval(pg_get_serial_sequence('core.edit_proposal', 'proposal_id'), 4);
+ setval 
+--------
+      4
+(1 row)
+
+-- 3. Queue depth: future-scheduled checks and stopped steps are not counted as
+-- waiting or claimed.
+SET SESSION AUTHORIZATION muster;
+BEGIN;
+INSERT INTO core.queue (worker, lane, item_id, queued_at)
+VALUES ('waybill', 'normal', 'PA-0006', '2999-01-01 00:00+00');
+INSERT INTO core.queue (worker, lane, item_id, queued_at, held)
+VALUES ('moldloft', 'normal', 'PA-0007', '2026-01-12 10:00+00', true);
+INSERT INTO core.queue (worker, lane, item_id, queued_at, lease_token, leased_until)
+VALUES ('shakedown', 'normal', 'PA-0008', '2026-01-12 10:00+00',
+        'ffffffff-ffff-ffff-ffff-ffffffffffff', 'infinity');
+SAVEPOINT valid_queue_rows;
+INSERT INTO core.queue (worker, lane, held, lease_token, leased_until)
+VALUES ('sextant', 'normal', true, '00000000-0000-4000-8000-000000000010', '2999-01-01 00:00+00');
+ERROR:  E_PARSE: a held queue entry has no live lease
+ROLLBACK TO SAVEPOINT valid_queue_rows;
+RESET SESSION AUTHORIZATION;
+SELECT worker, lane, waiting, claimed FROM pub.queue_depth
+WHERE worker IN ('waybill', 'moldloft', 'shakedown')
+ORDER BY worker;
+ worker | lane | waiting | claimed 
+--------+------+---------+---------
+(0 rows)
+
+ROLLBACK;
+-- 4. Worker results: one JSON object up to 256 KiB per subject and worker.
+SET SESSION AUTHORIZATION muster;
+INSERT INTO core.result (item_id, worker, payload, recorded_at)
+VALUES ('PA-0001', 'sextant', '{"job": "sample private observation"}', '2026-01-05 10:00+00')
+RETURNING item_id, worker, payload;
+ item_id | worker  |                payload                
+---------+---------+---------------------------------------
+ PA-0001 | sextant | {"job": "sample private observation"}
+(1 row)
+
+UPDATE core.result SET payload = '{"job": "updated sample private observation"}', recorded_at = '2026-01-05 10:05+00'
+WHERE item_id = 'PA-0001' AND worker = 'sextant'
+RETURNING worker, payload;
+ worker  |                    payload                    
+---------+-----------------------------------------------
+ sextant | {"job": "updated sample private observation"}
+(1 row)
+
+INSERT INTO core.result (proposal_id, worker, payload, recorded_at)
+VALUES (4, 'countersign', '{"note": "sample owner note"}', '2026-01-12 11:05+00')
+RETURNING proposal_id, worker;
+ proposal_id |   worker    
+-------------+-------------
+           4 | countersign
+(1 row)
+
+INSERT INTO core.result (item_id, worker, payload) VALUES ('PA-0001', 'sextant', '{"job": "duplicate"}');
+ERROR:  duplicate key value violates unique constraint "result_item_worker"
+DELETE FROM core.result WHERE worker = 'sextant';
+ERROR:  permission denied for table result
+UPDATE core.result SET worker = 'assay' WHERE worker = 'sextant';
+ERROR:  permission denied for table result
+INSERT INTO core.result (item_id, worker, payload) VALUES ('PA-0002', 'sextant', '[1, 2]');
+ERROR:  E_PARSE: payload must be a JSON object
+INSERT INTO core.result (item_id, proposal_id, worker, payload) VALUES ('PA-0002', 4, 'sextant', '{}');
+ERROR:  E_PARSE: a result is about one item or one proposal
+INSERT INTO core.result (worker, payload) VALUES ('sextant', '{}');
+ERROR:  E_PARSE: a result is about one item or one proposal
+INSERT INTO core.result (item_id, worker, payload)
+VALUES ('PA-0002', 'waybill', jsonb_build_object('spec', repeat('x', 262145)));
+ERROR:  E_PARSE: payload is longer than 262144 bytes
+-- 5. Lease outcomes: remember how the last lease on each subject ended.
+INSERT INTO core.lease_outcome (item_id, is_incident, lease, worker, call_name, call_arg, ack_state, ack_next, recorded_at)
+VALUES ('PA-0001', false, 'PA-0001.1.1', 'sextant', 'complete', 'observed', 'observed', 'assay', '2026-01-05 10:00+00')
+RETURNING lease, call_name, ack_state, ack_next;
+    lease    | call_name | ack_state | ack_next 
+-------------+-----------+-----------+----------
+ PA-0001.1.1 | complete  | observed  | assay
+(1 row)
+
+INSERT INTO core.lease_outcome (item_id, is_incident, lease, worker, call_name, call_arg, ack_state, recorded_at)
+VALUES ('PA-0001', true, 'incident:PA-0001.2.1', 'bellbuoy', 'complete', 'observed', 'observed', '2026-01-05 10:01+00')
+RETURNING lease, is_incident;
+        lease         | is_incident 
+----------------------+-------------
+ incident:PA-0001.2.1 | t
+(1 row)
+
+INSERT INTO core.lease_outcome (item_id, is_incident, lease, worker, call_name, call_arg, ack_state, ack_held, recorded_at)
+VALUES ('PA-0002', false, 'PA-0002.3.1', 'sextant', 'fail', 'E_PARSE', 'screened_out', true, '2026-01-06 12:05+00')
+RETURNING lease, call_arg, ack_held;
+    lease    | call_arg | ack_held 
+-------------+----------+----------
+ PA-0002.3.1 | E_PARSE  | t
+(1 row)
+
+INSERT INTO core.lease_outcome (item_id, is_incident, lease, worker, call_name, ack_state, recorded_at)
+VALUES ('PA-0003', false, 'PA-0003.4.1', 'sextant', 'needs_subtool', 'needs_subtool', '2026-01-07 10:00+00')
+RETURNING lease, call_name, ack_state;
+    lease    |   call_name   |   ack_state   
+-------------+---------------+---------------
+ PA-0003.4.1 | needs_subtool | needs_subtool
+(1 row)
+
+INSERT INTO core.lease_outcome (proposal_id, lease, worker, call_name, call_arg, ack_state, ack_next, recorded_at)
+VALUES (4, 'EP-0004.5.1', 'countersign', 'complete', 'approved', 'approved', 'bellbuoy', '2026-01-12 11:05+00')
+RETURNING lease, ack_state, ack_next;
+    lease    | ack_state | ack_next 
+-------------+-----------+----------
+ EP-0004.5.1 | approved  | bellbuoy
+(1 row)
+
+INSERT INTO core.lease_outcome (item_id, lease, worker, call_name, call_arg, ack_state)
+VALUES ('PA-0004', 'PA-0001.1.1', 'sextant', 'complete', 'observed', 'observed');
+ERROR:  E_PARSE: lease must name the subject, arrival and attempt
+INSERT INTO core.lease_outcome (item_id, lease, worker, call_name, call_arg, ack_state)
+VALUES ('PA-0004', 'PA-0004.0.1', 'sextant', 'complete', 'observed', 'observed');
+ERROR:  E_PARSE: lease must name the subject, arrival and attempt
+INSERT INTO core.lease_outcome (proposal_id, is_incident, lease, worker, call_name, call_arg, ack_state)
+VALUES (1, true, 'incident:EP-0001.1.1', 'bellbuoy', 'complete', 'approved', 'approved');
+ERROR:  E_PARSE: an incident lease belongs to an item, not a proposal
+INSERT INTO core.lease_outcome (item_id, lease, worker, call_name, call_arg, ack_state)
+VALUES ('PA-0004', 'PA-0004.1.1', 'sextant', 'fail', 'E_NEEDS_SUBTOOL', 'scored');
+ERROR:  E_PARSE: fail takes E_TIMEOUT or E_PARSE
+INSERT INTO core.lease_outcome (item_id, lease, worker, call_name, call_arg, ack_state)
+VALUES ('PA-0004', 'PA-0004.1.1', 'sextant', 'needs_subtool', 'needs_subtool', 'needs_subtool');
+ERROR:  E_PARSE: needs_subtool carries no call_arg
+INSERT INTO core.lease_outcome (item_id, lease, worker, call_name, call_arg, ack_state, ack_next, ack_held)
+VALUES ('PA-0004', 'PA-0004.1.1', 'sextant', 'fail', 'E_PARSE', 'scored', 'assay', true);
+ERROR:  E_PARSE: a held step has no next worker
+INSERT INTO core.lease_outcome (item_id, lease, worker, call_name, call_arg, ack_state)
+VALUES ('PA-0004', 'PA-0004.1.1', 'sextant', 'abandon', 'scored', 'scored');
+ERROR:  E_NEEDS_SUBTOOL: call_name is a name Logbook has no rule for
+-- 6. Component health: four known states, optional public code and sha256 digest.
+INSERT INTO core.component_health (component, state, error_code, digest, reported_at) VALUES
+    ('sextant', 'healthy',  NULL,        'sha256:' || repeat('a', 64), '2026-01-12 12:00+00'),
+    ('logbook', 'idle',     NULL,        NULL,                         '2026-01-12 12:00+00'),
+    ('assay',   'degraded', 'E_TIMEOUT', 'sha256:' || repeat('b', 64), '2026-01-12 12:00+00'),
+    ('trawl',   'paused',   NULL,        NULL,                         '2026-01-12 12:00+00')
+RETURNING component, state, error_code;
+ component |  state   | error_code 
+-----------+----------+------------
+ sextant   | healthy  | 
+ logbook   | idle     | 
+ assay     | degraded | E_TIMEOUT
+ trawl     | paused   | 
+(4 rows)
+
+UPDATE core.component_health
+SET digest = 'sha256:' || repeat('c', 64), reported_at = '2026-01-12 12:05+00'
+WHERE component = 'sextant'
+RETURNING component, left(digest, 15) AS digest_prefix;
+ component |  digest_prefix  
+-----------+-----------------
+ sextant   | sha256:cccccccc
+(1 row)
+
+DELETE FROM core.component_health WHERE component = 'trawl';
+ERROR:  permission denied for table component_health
+INSERT INTO core.component_health (component, state) VALUES ('muster', 'erroring');
+ERROR:  E_NEEDS_SUBTOOL: state is a name Logbook has no rule for
+INSERT INTO core.component_health (component, state, digest) VALUES ('muster', 'healthy', 'sha256:short');
+ERROR:  E_PARSE: digest must be sha256: followed by 64 lower-case hexadecimal digits
+INSERT INTO core.component_health (component, state, digest) VALUES ('muster', 'healthy', 'sha256:' || repeat('A', 64));
+ERROR:  E_PARSE: digest must be sha256: followed by 64 lower-case hexadecimal digits
+-- 7. Daily submission counts: 64-digit lower-case hex hash and positive count.
+INSERT INTO core.submission_count (submission_day, visitor_key, submissions)
+VALUES ('2026-01-12', repeat('d', 64), 1)
+RETURNING submission_day, submissions;
+ submission_day | submissions 
+----------------+-------------
+ 2026-01-12     |           1
+(1 row)
+
+UPDATE core.submission_count SET submissions = submissions + 1
+WHERE submission_day = '2026-01-12' AND visitor_key = repeat('d', 64)
+RETURNING submissions;
+ submissions 
+-------------
+           2
+(1 row)
+
+INSERT INTO core.submission_count (submission_day, visitor_key, submissions)
+VALUES ('2026-01-12', '203.0.113.7', 1);
+ERROR:  E_PARSE: visitor_key must be 64 lower-case hexadecimal digits
+INSERT INTO core.submission_count (submission_day, visitor_key, submissions)
+VALUES ('2026-01-12', repeat('D', 64), 1);
+ERROR:  E_PARSE: visitor_key must be 64 lower-case hexadecimal digits
+INSERT INTO core.submission_count (submission_day, visitor_key, submissions)
+VALUES ('2026-01-12', repeat('e', 64), 0);
+ERROR:  E_PARSE: submissions must be 1 or more
+-- 8. Public surface: pub_ro sees pub.component_health without digests, and none
+-- of the new internal values appears anywhere in pub.
+SET SESSION AUTHORIZATION pub_ro;
+SELECT component, state, error_code, reported_at FROM pub.component_health ORDER BY component;
+ component |  state   | error_code |      reported_at       
+-----------+----------+------------+------------------------
+ assay     | degraded | E_TIMEOUT  | 2026-01-12 12:00:00+00
+ logbook   | idle     |            | 2026-01-12 12:00:00+00
+ sextant   | healthy  |            | 2026-01-12 12:05:00+00
+ trawl     | paused   |            | 2026-01-12 12:00:00+00
+(4 rows)
+
+SELECT count(*) FROM core.result;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.lease_outcome;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.component_health;
+ERROR:  permission denied for schema core at character 22
+SELECT count(*) FROM core.submission_count;
+ERROR:  permission denied for schema core at character 22
+RESET SESSION AUTHORIZATION;
+CREATE TEMPORARY TABLE all_published AS
+SELECT to_jsonb(v)::text AS line FROM pub.item v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.item_history v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.evaluation v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.evaluation_gate v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.evaluation_factor v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.decision v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.queue_depth v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.pause v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.edit_proposal v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.restore_drill v
+UNION ALL SELECT to_jsonb(v)::text FROM pub.component_health v;
+SELECT count(*) AS leaked_internal_values
+FROM all_published p
+JOIN (
+    SELECT source AS val FROM core.item WHERE source IS NOT NULL
+    UNION ALL SELECT reason FROM core.edit_proposal WHERE reason IS NOT NULL
+    UNION ALL SELECT file_path FROM core.edit_proposal WHERE file_path IS NOT NULL
+    UNION ALL SELECT payload::text FROM core.result
+    UNION ALL SELECT lease FROM core.lease_outcome
+    UNION ALL SELECT digest FROM core.component_health WHERE digest IS NOT NULL
+    UNION ALL SELECT visitor_key FROM core.submission_count
+) secret ON position(secret.val IN p.line) > 0;
+ leaked_internal_values 
+------------------------
+                      0
+(1 row)
+
+-- 9. Integrity checks: zero failures now, and damage to each new table or view is caught.
+SELECT sum(failures) AS failures FROM core.integrity_check();
+ failures 
+----------
+        0
+(1 row)
+
+BEGIN;
+SET LOCAL session_replication_role = replica;
+UPDATE core.result SET payload = '[1]' WHERE result_id = 1;
+UPDATE core.lease_outcome SET lease = 'wrong' WHERE outcome_id = 1;
+UPDATE core.component_health SET state = 'erroring' WHERE component = 'assay';
+UPDATE core.submission_count SET visitor_key = '203.0.113.7' WHERE submissions = 2;
+CREATE OR REPLACE VIEW pub.component_health WITH (security_barrier) AS
+SELECT h.component, h.state, h.error_code, h.reported_at
+FROM core.component_health h
+WHERE h.state = 'healthy';
+SELECT * FROM core.integrity_check() WHERE failures > 0;
+                      check_name                       | failures 
+-------------------------------------------------------+----------
+ result rows are well-formed                           |        1
+ lease_outcome rows are well-formed                    |        1
+ component_health rows are well-formed                 |        1
+ submission_count rows are well-formed                 |        1
+ each public view shows every row of its working table |        3
+(5 rows)
+
+ROLLBACK;
+SELECT sum(failures) AS failures_after_rollback FROM core.integrity_check();
+ failures_after_rollback 
+-------------------------
+                       0
+(1 row)
+

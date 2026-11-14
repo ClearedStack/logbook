@@ -125,8 +125,8 @@ SELECT proposal_id, status, payload FROM pub.edit_proposal WHERE proposal_id = 1
 SELECT string_agg(column_name, ', ' ORDER BY ordinal_position) AS columns
 FROM information_schema.columns
 WHERE table_schema = 'core' AND table_name = 'edit_proposal';
-                                          columns                                           
---------------------------------------------------------------------------------------------
- proposal_id, element_id, owner_repo, edit_class, payload, status, submitted_at, decided_at
+                                                    columns                                                    
+---------------------------------------------------------------------------------------------------------------
+ proposal_id, element_id, owner_repo, edit_class, payload, status, submitted_at, decided_at, reason, file_path
 (1 row)
 

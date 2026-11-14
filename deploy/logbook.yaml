@@ -1,8 +1,8 @@
 # Logbook: one PostgreSQL 17 server with its data on a persistent volume.
 #
-# The Secret logbook-credentials is not in this repository. It holds two keys,
-# postgres-password and muster-password, and is made in the cluster by whoever
-# deploys Logbook.
+# The Secret logbook-credentials is not in this repository. It holds
+# postgres-password, muster-password and (once Conn is deployed) pub-ro-password,
+# and is made in the cluster by whoever deploys Logbook.
 apiVersion: v1
 kind: Service
 metadata:
@@ -10,6 +10,7 @@ metadata:
   namespace: clearedstack
   labels:
     app.kubernetes.io/name: logbook
+    app.kubernetes.io/part-of: clearedstack
 spec:
   type: ClusterIP
   selector:
@@ -26,6 +27,7 @@ metadata:
   namespace: clearedstack
   labels:
     app.kubernetes.io/name: logbook
+    app.kubernetes.io/part-of: clearedstack
 spec:
   serviceName: logbook
   replicas: 1
@@ -36,7 +38,9 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: logbook
+        app.kubernetes.io/part-of: clearedstack
     spec:
+      priorityClassName: clearedstack-high
       automountServiceAccountToken: false
       affinity:
         nodeAffinity:
@@ -60,6 +64,27 @@ spec:
         - name: postgres
           # postgres:17 (17.12), the image index, so the node picks arm64.
           image: docker.io/library/postgres:17@sha256:846a7ddaa67a4b354ae1d21087b683901aa6113a4ed626d3787cfbf6c85e3e07
+          # Tuned for the two control-plane clients (Muster and Conn) so the
+          # server stays within its 256 MiB memory budget under load.
+          args:
+            - -c
+            - shared_buffers=32MB
+            - -c
+            - work_mem=2MB
+            - -c
+            - maintenance_work_mem=16MB
+            - -c
+            - effective_cache_size=128MB
+            - -c
+            - max_connections=25
+            - -c
+            - wal_buffers=1MB
+            - -c
+            - min_wal_size=16MB
+            - -c
+            - max_wal_size=64MB
+            - -c
+            - jit=off
           env:
             - name: POSTGRES_DB
               value: logbook
@@ -95,8 +120,9 @@ spec:
               cpu: 50m
               memory: 256Mi
             limits:
-              memory: 512Mi
+              memory: 256Mi
           securityContext:
+            privileged: false
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -108,11 +134,19 @@ spec:
               mountPath: /var/run/postgresql
             - name: tmp
               mountPath: /tmp
+            - name: scripts
+              mountPath: /logbook/bin
+              readOnly: true
       volumes:
         - name: run
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 1Mi
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: scripts
+          configMap:
+            name: logbook-migrate
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -13,6 +13,7 @@ kind: Kustomization
 
 resources:
   - deploy/namespace.yaml
+  - deploy/priorityclass.yaml
   - deploy/networkpolicy.yaml
   - deploy/logbook.yaml
   - deploy/migrate-job.yaml
@@ -27,6 +28,8 @@ configMapGenerator:
     namespace: clearedstack
     files:
       - migrate.sh
+      - dump.sh
+      - restore-drill.sh
   - name: logbook-migrations
     namespace: clearedstack
     files:
@@ -39,3 +42,4 @@ configMapGenerator:
       - migrations/0007_integrity_checks.sql
       - migrations/0008_widen_item_id.sql
       - migrations/0009_item_numbering.sql
+      - migrations/0010_contract_v1_state.sql

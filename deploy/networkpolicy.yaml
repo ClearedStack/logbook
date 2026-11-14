@@ -12,19 +12,24 @@ spec:
     - Ingress
     - Egress
 ---
-# Who may reach the database: the migrate Job and Muster. Conn is added here
-# when it is deployed. Nothing else is, and Logbook itself may call nothing.
+# Who may reach the database: only the migrate Job, Muster and Conn inside
+# clearedstack. Workers in cs-workers and outside traffic cannot reach it, and
+# Logbook itself may call nothing.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: logbook-ingress
   namespace: clearedstack
+  labels:
+    app.kubernetes.io/name: logbook
+    app.kubernetes.io/part-of: clearedstack
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: logbook
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
         - podSelector:
@@ -33,9 +38,13 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: muster
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: conn
       ports:
         - protocol: TCP
           port: 5432
+  egress: []
 ---
 # The migrate Job may look up Logbook's name and connect to it. Nothing else.
 apiVersion: networking.k8s.io/v1
@@ -43,12 +52,17 @@ kind: NetworkPolicy
 metadata:
   name: logbook-migrate-egress
   namespace: clearedstack
+  labels:
+    app.kubernetes.io/name: logbook-migrate
+    app.kubernetes.io/part-of: clearedstack
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: logbook-migrate
   policyTypes:
+    - Ingress
     - Egress
+  ingress: []
   egress:
     - to:
         - podSelector:

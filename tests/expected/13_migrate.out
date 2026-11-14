@@ -9,6 +9,7 @@ applied 0006_privileges
 applied 0007_integrity_checks
 applied 0008_widen_item_id
 applied 0009_item_numbering
+applied 0010_contract_v1_state
 exit status 0
 
 == Run again: there is nothing to apply.
@@ -25,6 +26,7 @@ exit status 0
 0007_integrity_checks  true
 0008_widen_item_id  true
 0009_item_numbering  true
+0010_contract_v1_state  true
 
 == The recorded checksum of the first migration is the SHA-256 of its file.
 same
@@ -98,4 +100,5 @@ applied 0006_privileges
 applied 0007_integrity_checks
 applied 0008_widen_item_id
 applied 0009_item_numbering
+applied 0010_contract_v1_state
 exit status 0

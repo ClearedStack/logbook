@@ -12,9 +12,10 @@ spec:
     - Ingress
     - Egress
 ---
-# Who may reach the database: only the migrate Job, Muster and Conn inside
-# clearedstack. Workers in cs-workers and outside traffic cannot reach it, and
-# Logbook itself may call nothing.
+# Who may reach the database: only the migrate Job, the nightly backup Job,
+# Muster and Conn inside clearedstack. Workers in cs-workers, the monthly
+# restore drill, and outside traffic cannot reach it, and Logbook itself may
+# call nothing.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -38,6 +39,7 @@ spec:
                 operator: In
                 values:
                   - logbook-migrate
+                  - logbook-backup
                   - muster
                   - conn
       ports:
@@ -79,3 +81,94 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+---
+# The nightly backup Job may connect to Logbook for pg_dump, resolve DNS, and
+# upload encrypted archives over HTTPS to off-node storage (excluding private,
+# link-local and CGNAT ranges so it cannot reach internal cluster HTTPS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logbook-backup-egress
+  namespace: clearedstack
+  labels:
+    app.kubernetes.io/name: logbook-backup
+    app.kubernetes.io/part-of: clearedstack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: logbook-backup
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: logbook
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# The monthly restore drill may resolve DNS and download the encrypted archive
+# from off-node HTTPS storage, and has zero access to Logbook or any internal
+# cluster network; restore-drill.sh runs strictly over a local Unix socket.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logbook-restore-drill-egress
+  namespace: clearedstack
+  labels:
+    app.kubernetes.io/name: logbook-restore-drill
+    app.kubernetes.io/part-of: clearedstack
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: logbook-restore-drill
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
